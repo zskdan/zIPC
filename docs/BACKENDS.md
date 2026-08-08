@@ -1,0 +1,120 @@
+# zIPC backend model
+
+zIPC operates through three independent logical backend roles:
+
+```text
+payload backend     stores or carries the buffer bytes
+descriptor backend  queues/transfers zipc_message_t handles and metadata
+event backend       wakes or notifies the receiving component
+```
+
+A link is therefore understood as:
+
+```text
+payload + descriptor + event
+```
+
+The roles are independent even when a platform adapter bundles two of them.
+For example, `ZIPC_TRANSPORT_SHM_RING_EVENTFD` is a compound adapter made of a
+shared descriptor ring and an eventfd event backend.
+
+## 1. Payload backends
+
+Payload backends answer: **where are the bytes stored or carried?**
+
+| Backend | Typical use |
+|---|---|
+| `ZIPC_SHM_POSIX` | Linux processes sharing RAM |
+| `ZIPC_SHM_HUGEPAGES` | Large Linux shared pools |
+| `ZIPC_SHM_DTREVMEM_CACHED` | Cached reserved DDR |
+| `ZIPC_SHM_DTREVMEM_UNCACHED` | Uncached reserved DDR or mapped device memory |
+| `ZIPC_SHM_XEN_STATIC` | Xen static shared memory |
+| `ZIPC_SHM_PREALLOCATED` | Global array, linker section, OCRAM/TCM, or BSP-owned memory |
+
+Future TCP/UDP payload backends use serialized bytes rather than a remotely
+dereferenceable shared-memory handle.
+
+## 2. Descriptor backends
+
+Descriptor backends answer: **how does the peer receive the handle and transfer metadata?**
+
+- message queue;
+- Unix datagram;
+- FIFO;
+- shared SPSC ring;
+- RPMsg;
+- shared mailbox;
+- Xen ring;
+- PL ring;
+- synchronous secure-call request/response.
+
+## 3. Event backends
+
+Event backends answer: **how does the peer know that descriptors are available?**
+
+- integrated wakeup in a queue/socket/RPMsg implementation;
+- eventfd;
+- shared-memory polling (busy polling of the descriptor ring);
+- FreeRTOS task notification;
+- IPI;
+- Xen event channel;
+- IRQ;
+- synchronous secure-call completion.
+
+## Current compound adapters
+
+| Existing transport adapter | Descriptor role | Event role |
+|---|---|---|
+| POSIX/FreeRTOS message queue | Message queue | Integrated |
+| Unix datagram | Unix datagram | Integrated |
+| FIFO | FIFO | Integrated |
+| SHM ring + eventfd | Shared ring | eventfd |
+| SHM ring + polling | Shared ring | shared-memory polling |
+| RPMsg | RPMsg | Integrated |
+| Task notification | Shared mailbox | Task notification |
+| IPI | Shared mailbox | IPI |
+| Xen ring + event channel | Xen ring | Xen event channel |
+| PL ring + IRQ | PL ring | IRQ |
+| SMC / FF-A | Secure-call descriptor | Synchronous completion |
+
+The public role enums and `zipc_transport_backend_roles()` make this composition
+explicit. Existing compound transport names remain supported in v0.1.x for
+compatibility.
+
+## Example compositions
+
+```text
+Linux processes:
+    payload    = POSIX SHM
+    descriptor = shared SPSC ring
+    event      = eventfd or shared-memory polling
+
+FreeRTOS tasks:
+    payload    = PREALLOCATED global/linker memory
+    descriptor = shared mailbox
+    event      = task notification
+
+Linux <-> R5:
+    payload    = reserved DDR
+    descriptor = RPMsg or shared mailbox/ring
+    event      = RPMsg-integrated notification or IPI
+
+PS <-> PL:
+    payload    = DDR or BRAM
+    descriptor = PL-visible ring
+    event      = doorbell + IRQ
+```
+
+## Shared-memory polling event backend
+
+`ZIPC_TRANSPORT_SHM_RING_POLLING` combines the shared SPSC descriptor ring with
+`ZIPC_EVENT_BACKEND_SHM_POLLING`. The receiver continuously observes the ring
+producer index and consumes a descriptor as soon as it appears. No eventfd,
+interrupt, syscall, or scheduler wakeup is required on the data path.
+
+Polling is a true busy-spin path using a CPU-relax instruction. `poll_timeout_ns == 0` waits forever; any non-zero value uses `CLOCK_MONOTONIC` and returns `ZIPC_ERR_TIMEOUT` on expiry.
+
+This backend is intended for dedicated cores/threads and latency-critical paths.
+It consumes CPU while idle and should not be the default for general-purpose
+Linux processes. The shared ring metadata must be mapped as Normal memory with
+working acquire/release atomics and coherent visibility between peers.
