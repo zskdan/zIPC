@@ -198,3 +198,21 @@ topology can then be registered from static C/header data with
 `zipc_topology_load_string()`, or loaded on hosted/Linux systems with
 `zipc_topology_load_file()`. All paths use `zipc_topology_validate()`.
 See `TOPOLOGY.md` for the configuration format and merge policies.
+
+## Library version
+
+Compile-time version macros:
+
+- `ZIPC_VERSION_MAJOR`, `ZIPC_VERSION_MINOR`, `ZIPC_VERSION_PATCH` — numeric
+  semantic-version components.
+- `ZIPC_VERSION_STRING` — canonical version string.
+
+Runtime version query:
+
+```c
+const char *version = zipc_version_string();
+```
+
+`zipc_version_string()` always returns the immutable library version string,
+for example `"0.1.9"`. It is safe to call at any time and the returned pointer
+is valid for the lifetime of the library.

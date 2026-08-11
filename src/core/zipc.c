@@ -4,6 +4,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+const char *zipc_version_string(void)
+{
+    return ZIPC_VERSION_STRING;
+}
+
 typedef enum {
     ZIPC_BUFFER_LOCAL_INVALID = 0,
     ZIPC_BUFFER_LOCAL_OWNED = 1

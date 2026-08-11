@@ -10,6 +10,11 @@
 extern "C" {
 #endif
 
+#define ZIPC_VERSION_MAJOR        0U
+#define ZIPC_VERSION_MINOR        1U
+#define ZIPC_VERSION_PATCH        9U
+#define ZIPC_VERSION_STRING       "0.1.9"
+
 #define ZIPC_POOL_MAGIC             UINT32_C(0x5A495043)
 #define ZIPC_POOL_ABI_VERSION       UINT16_C(1)
 #define ZIPC_TRACE_DEPTH            8U
@@ -61,6 +66,9 @@ typedef struct {
     uint32_t offset;
     uint32_t length;
 } zipc_buffer_region_t;
+
+/** Returns the immutable library version string, e.g. "0.1.9". */
+const char *zipc_version_string(void);
 
 typedef enum {
     ZIPC_TRACE_ALLOCATE = 1,

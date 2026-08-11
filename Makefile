@@ -7,9 +7,9 @@ CORE := src/core/zipc.c src/core/zipc-backends.c
 LINUX_COMMON := platform/linux/common/platform-linux-common.c
 LINUX_USER := platform/linux/user/platform-linux-user.c platform/linux/user/zipc-topology-file.c
 
-.PHONY: all clean test basic integration integration-targets integration-freertos integration-baremetal guard-pages api-simplified topology-config strict-ownership ready-linux5 ready-to-play utilities ping membench transport-bench stat list-platforms docs shared-buffer-chain
+.PHONY: all clean test basic integration integration-targets integration-freertos integration-baremetal guard-pages version-linux api-simplified topology-config strict-ownership ready-linux5 ready-to-play utilities ping membench transport-bench stat list-platforms docs shared-buffer-chain
 
-all: basic integration build/zipc-resilience-linux integration-targets guard-pages api-simplified topology-config strict-ownership shared-buffer-chain ready-linux5 utilities
+all: basic integration build/zipc-resilience-linux integration-targets guard-pages version-linux api-simplified topology-config strict-ownership shared-buffer-chain ready-linux5 utilities
 
 basic: build/zipc-basic
 integration: build/zipc-integration-linux
@@ -18,6 +18,7 @@ integration-targets: integration-freertos integration-baremetal
 integration-freertos: build/zipc-integration-freertos
 integration-baremetal: build/zipc-integration-baremetal
 guard-pages: build/zipc-guard-pages-linux
+version-linux: build/zipc-version-linux
 api-simplified: build/zipc-api-simplified-linux
 topology-config: build/zipc-topology-config-linux
 strict-ownership: build/zipc-strict-ownership-linux
@@ -64,6 +65,9 @@ build/zipc-strict-ownership-linux: $(CORE) $(LINUX_COMMON) $(LINUX_USER) tests/s
 build/zipc-guard-pages-linux: $(CORE) $(LINUX_COMMON) $(LINUX_USER) tests/guard-pages-linux.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
 
+build/zipc-version-linux: $(CORE) $(LINUX_COMMON) $(LINUX_USER) tests/version-linux.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
+
 
 build/zipc-integration-freertos: $(CORE) platform/freertos/platform-freertos.c tests/stubs/freertos-stubs.c tests/integration-freertos.c | build
 	$(CC) -Itests/stubs $(CPPFLAGS) $(CFLAGS) $^ -o $@
@@ -86,11 +90,12 @@ build/zipc-packetrate: $(CORE) $(LINUX_COMMON) $(LINUX_USER) utilities/zipc-pack
 build/zipc-stat: $(CORE) $(LINUX_COMMON) $(LINUX_USER) utilities/zipc-stat.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
 
-test: all guard-pages api-simplified topology-config strict-ownership shared-buffer-chain ready-linux5 utilities
+test: all guard-pages version-linux api-simplified topology-config strict-ownership shared-buffer-chain ready-linux5 utilities
 	./build/zipc-basic
 	./build/zipc-integration-linux
 	./build/zipc-resilience-linux
 	./build/zipc-guard-pages-linux
+	./build/zipc-version-linux
 	./build/zipc-api-simplified-linux
 	./build/zipc-topology-config-linux
 	./build/zipc-strict-ownership-linux
