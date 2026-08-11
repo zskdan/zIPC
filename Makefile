@@ -9,7 +9,7 @@ LINUX_USER := platform/linux/user/platform-linux-user.c platform/linux/user/zipc
 
 .PHONY: all clean test basic integration integration-targets integration-freertos integration-baremetal guard-pages api-simplified topology-config strict-ownership ready-linux5 ready-to-play utilities ping membench transport-bench stat list-platforms docs shared-buffer-chain
 
-all: basic integration build/zipc-resilience-linux integration-targets
+all: basic integration build/zipc-resilience-linux integration-targets guard-pages api-simplified topology-config strict-ownership shared-buffer-chain ready-linux5 utilities
 
 basic: build/zipc-basic
 integration: build/zipc-integration-linux
