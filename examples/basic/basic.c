@@ -64,6 +64,7 @@ int main(void)
     CHECK(zipc_buffer_alloc_ex(producer, 0U, 16U, 0U, &buffer));
     CHECK(zipc_buffer_append(&buffer, "hello zIPC", sizeof("hello zIPC")));
     CHECK(zipc_send(producer, &buffer));
+    printf("producer sent: %s\n", "hello zIPC");
 
     CHECK(zipc_recv(consumer, &buffer));
     printf("consumer received: %s\n", (char *)zipc_buffer_data(&buffer));
