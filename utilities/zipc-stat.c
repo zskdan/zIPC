@@ -47,16 +47,21 @@ int main(int argc, char **argv)
     uint32_t slots = 64U;
     uint32_t capacity = 4096U;
     bool show_free = false;
+    bool name_set = false, slots_set = false, capacity_set = false;
     for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--name") == 0 && ++i < argc) name = argv[i];
-        else if (strcmp(argv[i], "--slots") == 0 && ++i < argc) slots = parse_u32(argv[i]);
-        else if (strcmp(argv[i], "--capacity") == 0 && ++i < argc) capacity = parse_u32(argv[i]);
+        if (strcmp(argv[i], "--name") == 0 && ++i < argc) { name = argv[i]; name_set = true; }
+        else if (strcmp(argv[i], "--slots") == 0 && ++i < argc) { slots = parse_u32(argv[i]); slots_set = true; }
+        else if (strcmp(argv[i], "--capacity") == 0 && ++i < argc) { capacity = parse_u32(argv[i]); capacity_set = true; }
         else if (strcmp(argv[i], "--all") == 0) show_free = true;
         else {
             fprintf(stderr, "usage: %s [--name /shm] [--slots N] [--capacity N] [--all]\n", argv[0]);
             return 2;
         }
     }
+    printf("config: name=%s%s slots=%u%s capacity=%u%s\n",
+           name, name_set ? "" : " (default)",
+           slots, slots_set ? "" : " (default)",
+           capacity, capacity_set ? "" : " (default)");
 
     const size_t control_size = zipc_pool_required_control_size(slots);
     const size_t payload_size = zipc_pool_required_payload_size(slots, capacity, 0U, 64U);

@@ -39,27 +39,32 @@ static uint64_t parse_size(const char *text)
 static void usage(const char *program)
 {
     fprintf(stderr,
-            "Usage: %s --backend posix|hugepages|dtrevmem-cached|dtrevmem-uncached "
-            "[--size 64M] [--iterations 20] [--path PATH] [--phys ADDRESS]\n",
+            "Usage: %s [--backend posix|hugepages|dtrevmem-cached|dtrevmem-uncached] "
+            "[--size 64M] [--iterations 20] [--path PATH] [--phys ADDRESS]\n"
+            "Defaults: --backend posix --size 64M --iterations 20\n",
             program);
 }
 
 int main(int argc, char **argv)
 {
-    const char *backend = NULL;
+    const char *backend = "posix";
     const char *path = NULL;
     uint64_t physical_address = 0U;
     size_t size = 64U * 1024U * 1024U;
     unsigned int iterations = 20U;
+    bool backend_set = false, size_set = false, iterations_set = false;
 
     for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--backend") == 0 && i + 1 < argc)
+        if (strcmp(argv[i], "--backend") == 0 && i + 1 < argc) {
             backend = argv[++i];
-        else if (strcmp(argv[i], "--size") == 0 && i + 1 < argc)
+            backend_set = true;
+        } else if (strcmp(argv[i], "--size") == 0 && i + 1 < argc) {
             size = (size_t)parse_size(argv[++i]);
-        else if (strcmp(argv[i], "--iterations") == 0 && i + 1 < argc)
+            size_set = true;
+        } else if (strcmp(argv[i], "--iterations") == 0 && i + 1 < argc) {
             iterations = (unsigned int)strtoul(argv[++i], NULL, 0);
-        else if (strcmp(argv[i], "--path") == 0 && i + 1 < argc)
+            iterations_set = true;
+        } else if (strcmp(argv[i], "--path") == 0 && i + 1 < argc)
             path = argv[++i];
         else if (strcmp(argv[i], "--phys") == 0 && i + 1 < argc)
             physical_address = strtoull(argv[++i], NULL, 0);
@@ -68,10 +73,14 @@ int main(int argc, char **argv)
             return EXIT_FAILURE;
         }
     }
-    if (backend == NULL || size == 0U || iterations == 0U) {
+    if (size == 0U || iterations == 0U) {
         usage(argv[0]);
         return EXIT_FAILURE;
     }
+    printf("config: backend=%s%s size=%zu%s iterations=%u%s\n",
+           backend, backend_set ? "" : " (default)",
+           size, size_set ? "" : " (default)",
+           iterations, iterations_set ? "" : " (default)");
 
     char generated_path[128];
     char generated_name[64];

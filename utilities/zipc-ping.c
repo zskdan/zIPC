@@ -122,11 +122,15 @@ int main(int argc, char **argv)
 {
     unsigned int relay_count = 0U;
     unsigned int iterations = 10U;
+    bool relays_set = false;
+    bool count_set = false;
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--relays") == 0 && i + 1 < argc) {
             relay_count = (unsigned int)strtoul(argv[++i], NULL, 0);
+            relays_set = true;
         } else if (strcmp(argv[i], "--count") == 0 && i + 1 < argc) {
             iterations = (unsigned int)strtoul(argv[++i], NULL, 0);
+            count_set = true;
         } else {
             usage(argv[0]);
             return EXIT_FAILURE;
@@ -137,6 +141,9 @@ int main(int argc, char **argv)
         usage(argv[0]);
         return EXIT_FAILURE;
     }
+    printf("config: relays=%u%s count=%u%s\n",
+           relay_count, relays_set ? "" : " (default)",
+           iterations, count_set ? "" : " (default)");
     const unsigned int edge_count = component_count - 1U;
 
     char shm_name[64];

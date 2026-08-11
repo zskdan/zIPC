@@ -68,17 +68,23 @@ int main(int argc, char **argv)
     uint64_t packet_count = UINT64_C(1000000);
     uint32_t payload_size = 8U;
     uint32_t ring_depth = DEFAULT_RING_DEPTH;
+    bool transport_set = false, packets_set = false;
+    bool payload_set = false, ring_set = false;
 
     for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--transport") == 0 && i + 1 < argc)
+        if (strcmp(argv[i], "--transport") == 0 && i + 1 < argc) {
             transport_name = argv[++i];
-        else if (strcmp(argv[i], "--packets") == 0 && i + 1 < argc)
+            transport_set = true;
+        } else if (strcmp(argv[i], "--packets") == 0 && i + 1 < argc) {
             packet_count = strtoull(argv[++i], NULL, 0);
-        else if (strcmp(argv[i], "--payload") == 0 && i + 1 < argc)
+            packets_set = true;
+        } else if (strcmp(argv[i], "--payload") == 0 && i + 1 < argc) {
             payload_size = (uint32_t)strtoul(argv[++i], NULL, 0);
-        else if (strcmp(argv[i], "--ring-depth") == 0 && i + 1 < argc)
+            payload_set = true;
+        } else if (strcmp(argv[i], "--ring-depth") == 0 && i + 1 < argc) {
             ring_depth = (uint32_t)strtoul(argv[++i], NULL, 0);
-        else {
+            ring_set = true;
+        } else {
             usage(argv[0]);
             return EXIT_FAILURE;
         }
@@ -87,6 +93,11 @@ int main(int argc, char **argv)
         usage(argv[0]);
         return EXIT_FAILURE;
     }
+    printf("config: transport=%s%s packets=%" PRIu64 "%s payload=%u%s ring-depth=%u%s\n",
+           transport_name, transport_set ? "" : " (default)",
+           packet_count, packets_set ? "" : " (default)",
+           payload_size, payload_set ? "" : " (default)",
+           ring_depth, ring_set ? "" : " (default)");
     char shm_name[64];
     snprintf(shm_name, sizeof(shm_name), "/zipc_tbench_%ld", (long)getpid());
     zipc_platform_memory_t *memory = NULL;
