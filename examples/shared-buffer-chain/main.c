@@ -69,6 +69,9 @@ int main(int argc, char **argv)
     CHECK_OK(zipc_link_open(&ab_a,"ab-a")); CHECK_OK(zipc_link_open(&ab_b,"ab-b"));
     CHECK_OK(zipc_link_open(&bc_b,"bc-b")); CHECK_OK(zipc_link_open(&bc_c,"bc-c"));
 
+    printf("shared-buffer chain: one buffer flows A -> B -> C, never copied\n");
+    printf("offsets: A@0x00 B@0x40 C@0x80 via zipc_buffer_at(); handle must be identical at every stage\n");
+
     zipc_buffer_t buffer;
     CHECK_OK(zipc_buffer_alloc(ab_a, 256U, &buffer));
     memset(zipc_buffer_data(&buffer), 0, zipc_buffer_size(&buffer));
@@ -99,8 +102,9 @@ int main(int argc, char **argv)
         get_u32(&buffer, 0x80U, &c_value) != 0) return 1;
     printf("C: recv handle=0x%016llx A=%08x B=%08x C=%08x\n",
            (unsigned long long)original, a_value, b_value, c_value);
-    printf("same handle=0x%016llx A=%08x B=%08x C=%08x\n",
-           (unsigned long long)original, a_value, b_value, c_value);
+    printf("PASS: same handle 0x%016llx across all stages; fixed offsets 0x00/0x40/0x80 "
+           "read consistently\n",
+           (unsigned long long)original);
     CHECK_OK(zipc_buffer_release(&buffer));
 
     zipc_link_destroy(bc_c); zipc_link_destroy(bc_b);
