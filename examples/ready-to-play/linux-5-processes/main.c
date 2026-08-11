@@ -44,7 +44,8 @@ static void child_run(unsigned int index,
     if (index == 0U) {
         CHECK_STATUS(zipc_buffer_alloc_ex(links[0].sender, 0U, 64U, 0U, &buffer));
         CHECK_STATUS(zipc_buffer_append(&buffer, "P0", 2U));
-        printf("P0: %.*s\n", (int)zipc_buffer_length(&buffer),
+        printf("P%u[pid=%ld]: %.*s\n", index, (long)getpid(),
+               (int)zipc_buffer_length(&buffer),
                (const char *)zipc_buffer_data(&buffer));
         fflush(stdout);
         CHECK_STATUS(zipc_send(links[0].sender, &buffer));
@@ -56,7 +57,8 @@ static void child_run(unsigned int index,
     if (count < 0 || (size_t)count >= sizeof(stage))
         _exit(EXIT_FAILURE);
     CHECK_STATUS(zipc_buffer_append(&buffer, stage, (uint32_t)count));
-    printf("P%u: %.*s\n", index, (int)zipc_buffer_length(&buffer),
+    printf("P%u[pid=%ld]: %.*s\n", index, (long)getpid(),
+           (int)zipc_buffer_length(&buffer),
            (const char *)zipc_buffer_data(&buffer));
     fflush(stdout);
 
@@ -91,6 +93,8 @@ int main(void)
         },
     };
     CHECK_STATUS(zipc_platform_memory_open(&memory, &memory_cfg));
+    printf("memory: opened %s (%u bytes, POSIX shm)\n",
+           memory_cfg.backend.posix.name, (unsigned)SHM_SIZE);
 
     const zipc_pool_config_t pool_cfg = {
         .control_memory = memory,
@@ -104,6 +108,8 @@ int main(void)
     };
     CHECK_STATUS(zipc_pool_format(&pool_cfg));
     CHECK_STATUS(zipc_pool_attach(&pool, &pool_cfg));
+    printf("pool: %u slots x %u bytes, payload at offset %u\n",
+           (unsigned)SLOT_COUNT, (unsigned)SLOT_SIZE, 16U * 1024U);
 
     for (unsigned int i = 0U; i < LINK_COUNT; ++i) {
         const size_t ring_size = zipc_transport_spsc_ring_size(RING_DEPTH);
@@ -142,6 +148,9 @@ int main(void)
         CHECK_STATUS(zipc_link_create(&links[i].sender, &sender_cfg));
         CHECK_STATUS(zipc_link_create(&links[i].receiver, &receiver_cfg));
     }
+    printf("links: %u ring/eventfd links, P%u -> P%u ... P%u -> P%u\n",
+           (unsigned)LINK_COUNT, 0U, 1U, (unsigned)(LINK_COUNT - 1U),
+           (unsigned)LINK_COUNT);
 
     for (unsigned int i = 0U; i < PROCESS_COUNT; ++i) {
         children[i] = fork();
@@ -151,6 +160,8 @@ int main(void)
         }
         if (children[i] == 0)
             child_run(i, links);
+        printf("spawned P%u pid=%ld\n", i, (long)children[i]);
+        fflush(stdout);
     }
 
     int result = EXIT_SUCCESS;
@@ -160,6 +171,9 @@ int main(void)
             !WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS)
             result = EXIT_FAILURE;
     }
+    printf("all %u processes exited %s\n",
+           (unsigned)PROCESS_COUNT,
+           result == EXIT_SUCCESS ? "cleanly" : "with errors");
 
     for (unsigned int i = 0U; i < LINK_COUNT; ++i) {
         const size_t ring_size = zipc_transport_spsc_ring_size(RING_DEPTH);
@@ -169,5 +183,6 @@ int main(void)
         munmap(links[i].ring, ring_size);
     }
     zipc_platform_memory_close(memory);
+    printf("cleanup: links destroyed, shm unlinked\n");
     return result;
 }
