@@ -55,14 +55,16 @@ static void buffer_get_wait(zipc_link_t *sender, zipc_buffer_t *buffer)
 static void usage(const char *program)
 {
     fprintf(stderr,
-            "Usage: %s --transport ring-eventfd|fifo|unix-dgram|mqueue "
-            "[--packets N] [--payload BYTES] [--ring-depth N]\n",
-            program);
+            "Usage: %s [--transport ring-eventfd|fifo|unix-dgram|mqueue] "
+            "[--packets N] [--payload BYTES] [--ring-depth N]\n"
+            "Defaults: --transport ring-eventfd --packets 1000000 "
+            "--payload 8 --ring-depth %u\n",
+            program, (unsigned)DEFAULT_RING_DEPTH);
 }
 
 int main(int argc, char **argv)
 {
-    const char *transport_name = NULL;
+    const char *transport_name = "ring-eventfd";
     uint64_t packet_count = UINT64_C(1000000);
     uint32_t payload_size = 8U;
     uint32_t ring_depth = DEFAULT_RING_DEPTH;
@@ -81,12 +83,10 @@ int main(int argc, char **argv)
             return EXIT_FAILURE;
         }
     }
-    if (transport_name == NULL || packet_count == 0U ||
-        payload_size > SLOT_SIZE || ring_depth < 2U) {
+    if (packet_count == 0U || payload_size > SLOT_SIZE || ring_depth < 2U) {
         usage(argv[0]);
         return EXIT_FAILURE;
     }
-
     char shm_name[64];
     snprintf(shm_name, sizeof(shm_name), "/zipc_tbench_%ld", (long)getpid());
     zipc_platform_memory_t *memory = NULL;
