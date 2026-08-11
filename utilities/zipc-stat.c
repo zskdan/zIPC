@@ -72,7 +72,13 @@ int main(int argc, char **argv)
         .backend.posix = {.name = name, .create = false, .unlink_on_close = false}
     };
     if (zipc_platform_memory_open(&memory, &memory_cfg) != ZIPC_OK) {
-        fprintf(stderr, "cannot open zIPC pool %s\n", name);
+        fprintf(stderr,
+                "cannot open zIPC pool %s: no such pool\n"
+                "  zipc-stat only observes an already-running pool; it never creates one.\n"
+                "  Start the application first, then run:\n"
+                "    %s --name %s --slots %u --capacity %u\n"
+                "  and pass --slots/--capacity exactly as the pool was created.\n",
+                name, argv[0], name, slots, capacity);
         return 1;
     }
 
@@ -89,7 +95,11 @@ int main(int argc, char **argv)
     };
     zipc_pool_t pool;
     if (zipc_pool_attach(&pool, &pool_cfg) != ZIPC_OK) {
-        fprintf(stderr, "pool geometry/ABI mismatch\n");
+        fprintf(stderr,
+                "pool geometry/ABI mismatch for %s\n"
+                "  --slots %u and --capacity %u do not match the live pool; verify with:\n"
+                "    ipcs -m\n",
+                name, slots, capacity);
         zipc_platform_memory_close(memory);
         return 1;
     }
