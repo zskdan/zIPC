@@ -3,8 +3,8 @@
 ## v0.1.10
 
 - Added library version API: `ZIPC_VERSION_MAJOR`/`MINOR`/`PATCH`/`STRING`
-  macros and `zipc_version_string()`; version identity aligned to v0.1.9
-  across VERSION, README, Doxyfile, AGENTS, and handoff docs.
+  macros and `zipc_version_string()`; synchronized v0.1.10 identity across
+  VERSION, README, Doxyfile, AGENTS, public API, tests, and handoff docs.
 - Added producer-side output to the basic example, ping-style output and
   `--interval` option to `zipc-ping`, clearer `zipc-stat` diagnostics,
   sender-side transfer prints in the Linux integration test, lifecycle/PID
@@ -18,6 +18,11 @@
   and identity contract in `docs/ARCHITECTURE.md`; consolidated the roadmap
   with observability, execution-model, and benchmarking workstreams plus a
   hardening backlog.
+- Corrected `zipc-ping` latency units, input validation, reply timeouts, packet
+  loss statistics, and forked output buffering; corrected `zipc-stat`
+  diagnostics and added utility error-path checks.
+- Added generated header dependencies for reliable incremental builds and
+  deterministic static-library recreation.
 
 ## v0.1.9
 

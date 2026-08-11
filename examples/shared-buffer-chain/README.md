@@ -50,11 +50,14 @@ configuration:
 The application send/receive/buffer logic is identical in both modes.
 
 Each component prints its view of the shared buffer as ownership passes through
-the chain. The handle values are runtime addresses:
+the chain. The handle is an opaque generation/slot identifier generated at
+runtime, not a process address:
 
 ```text
+shared-buffer chain: one buffer flows A -> B -> C, never copied
+offsets: A@0x00 B@0x40 C@0x80 via zipc_buffer_at(); handle must be identical at every stage
 A: send handle=0x<runtime-handle> A=aaaaaaaa
 B: forward handle=0x<runtime-handle> A=aaaaaaaa B=bbbbbbbb
 C: recv handle=0x<runtime-handle> A=aaaaaaaa B=bbbbbbbb C=cccccccc
-same handle=0x<runtime-handle> A=aaaaaaaa B=bbbbbbbb C=cccccccc
+PASS: same handle 0x<runtime-handle> across all stages; fixed offsets 0x00/0x40/0x80 read consistently
 ```

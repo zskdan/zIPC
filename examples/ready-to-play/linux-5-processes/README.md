@@ -28,16 +28,23 @@ make ready-linux5
 ./build/examples/zipc-ready-linux5
 ```
 
-Expected output:
+Expected output (PIDs vary):
 
 ```text
-P0: P0
-P1: P0->P1
-P2: P0->P1->P2
-P3: P0->P1->P2->P3
-P4: P0->P1->P2->P3->P4
+memory: opened /zipc_rtp_linux5 (262144 bytes, POSIX shm)
+pool: 32 slots x 4096 bytes, payload at offset 16384
+links: 4 ring/eventfd links, P0 -> P1 ... P3 -> P4
+spawned P0 pid=<pid>
+...
+P0[pid=<pid>]: P0
+P1[pid=<pid>]: P0->P1
+P2[pid=<pid>]: P0->P1->P2
+P3[pid=<pid>]: P0->P1->P2->P3
+P4[pid=<pid>]: P0->P1->P2->P3->P4
 final: P0->P1->P2->P3->P4
 hop_count=5 distinct=5
+all 5 processes exited cleanly
+cleanup: links destroyed, shm unlinked
 ```
 
 Each process prints the cumulative payload as soon as it has added its own

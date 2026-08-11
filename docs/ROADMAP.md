@@ -24,7 +24,7 @@ Completed:
 - Host-buildable bare-metal integration using the real adapter plus simulated IPI.
 - Integration targets included in `make test`.
 
-## v0.1.9 — Buffer-offset API and observable baseline
+## v0.1.9 — Buffer-offset API
 
 Completed:
 
@@ -34,14 +34,23 @@ Completed:
   canonical registry.
 - Guard-page regression test for out-of-bounds payload writes.
 - Strict-ownership regression test.
-- Library version identity aligned to v0.1.9 with `ZIPC_VERSION_*` macros and
+
+## v0.1.10 — Version API, diagnostics, and build layout
+
+Completed:
+
+- Library version identity aligned to v0.1.10 with `ZIPC_VERSION_*` macros and
   `zipc_version_string()` runtime query.
 - Build restructure: `build/examples`, `build/tests`, `build/utilities`,
-  `build/libs`, `build/docs`; static `libzipc.a`; `make all` covers everything.
+  `build/libs`, `build/docs`; static `libzipc.a`; `make all` covers every binary
+  and the library while `make docs` remains explicit.
 - Self-explanatory example/utility output (basic producer, ping-style
   `zipc-ping` with `--interval`, `zipc-stat` diagnostics, chain examples).
 - Execution model and observability-by-design principles captured in
   `docs/ARCHITECTURE.md`.
+- Reliable incremental header dependencies and deterministic archive rebuilds.
+- Correct `zipc-ping` timing units, validated intervals, bounded reply waits,
+  and measured packet-loss summaries.
 
 ## Cross-version workstream: Observability & diagnostics
 
@@ -69,9 +78,9 @@ without internally created threads; an optional shared reactor MAY create a
 bounded number of explicitly configured workers; thread creation SHALL never
 scale implicitly with links, endpoints, or messages.
 
-- v0.1.x: document the `INLINE`/`POLL`/`REACTOR` model and callback policies
-  (completed in ARCHITECTURE.md); verify the Linux path creates zero threads
-  with poll/epoll integration.
+- v0.1.x: document the proposed `INLINE`/`POLL`/`REACTOR` model and callback
+  policies (completed in ARCHITECTURE.md); verify that the current synchronous
+  Linux path creates zero internal threads.
 - v0.2: `zipc_get_fd()`/`zipc_process()` event-loop integration; async API
   without implied workers; explicit `ZIPC_CALLBACK_INLINE`/`DEFERRED`/
   `USER_EXECUTOR` policy.

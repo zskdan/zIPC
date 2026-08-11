@@ -67,7 +67,7 @@ typedef struct {
     uint32_t length;
 } zipc_buffer_region_t;
 
-/** Returns the immutable library version string, e.g. "0.1.9". */
+/** Returns the immutable library version string, e.g. "0.1.10". */
 const char *zipc_version_string(void);
 
 typedef enum {

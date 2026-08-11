@@ -108,6 +108,7 @@ Current public backends:
 - `ZIPC_SHM_DTREVMEM_CACHED`
 - `ZIPC_SHM_DTREVMEM_UNCACHED`
 - `ZIPC_SHM_XEN_STATIC`
+- `ZIPC_SHM_PREALLOCATED`
 
 Control-memory requirements:
 
@@ -149,14 +150,20 @@ specific implementation states otherwise.
   transitions.
 - `zipc-stat` inspects pool, component, slot, and trace state.
 
-## Execution model: no hidden threads
+## Current execution and planned model
 
-zIPC is designed around an explicit execution-ownership model. NNG and RPMsg
-style systems tend to hide per-link/per-socket worker threads; zIPC rejects
-that by default because hidden threads cost stack memory, wakeups, context
-switches, cache pollution, scheduling jitter, and harden tracing.
+In v0.1.10, zIPC calls execute in the caller context and the core creates no
+threads. Depending on the selected backend, a send or receive may block or poll
+inside that call. There is currently no public asynchronous, service-loop, or
+reactor API.
 
-Three execution modes, with the lightweight one as the default:
+Future releases will preserve caller ownership of execution and make progress
+policy explicit. NNG and RPMsg style systems tend to hide per-link/per-socket
+worker threads; zIPC rejects that as a future default because hidden threads
+cost stack memory, wakeups, context switches, cache pollution, scheduling
+jitter, and harder tracing.
+
+The proposed execution modes are:
 
 ```text
 ZIPC_EXEC_INLINE    synchronous call executes in the caller context
@@ -164,18 +171,19 @@ ZIPC_EXEC_POLL      application explicitly calls zipc_poll()/zipc_service()
 ZIPC_EXEC_REACTOR   optional, explicitly configured shared reactor thread
 ```
 
-Explicitly avoided: one thread per link or socket, RX+TX thread pairs per
-endpoint, and hidden worker pools. Async APIs never imply a worker:
+The planned contract explicitly avoids one thread per link or socket, RX+TX
+thread pairs per endpoint, and hidden worker pools. A future async API will not
+imply a worker:
 
 ```text
 zipc_send_async(link, msg, callback, arg)
 ```
 
-means the callback runs when the zIPC execution engine progresses — which may
-be `zipc_poll()`, an application event loop, or the optional reactor.
+would mean the callback runs when the zIPC execution engine progresses, which
+could be `zipc_poll()`, an application event loop, or the optional reactor.
 
-On Linux the model integrates with the application's own event loop through a
-pollable handle and a service entry point:
+The planned Linux model integrates with the application's own event loop
+through a pollable handle and a service entry point:
 
 ```c
 epoll_wait(epfd, events, n, timeout);
@@ -183,11 +191,11 @@ if (zipc_fd_ready(events))
     zipc_process(ctx);   /* progress + callbacks, no zIPC thread */
 ```
 
-FreeRTOS and bare metal use the same conceptual model inside an existing task
-or superloop; zIPC never forces another RTOS task.
+FreeRTOS and bare metal will use the same conceptual model inside an existing
+task or superloop; zIPC will not force another RTOS task.
 
-Callback execution policy is explicit so libraries never invoke callbacks from
-arbitrary internal threads:
+The proposed callback execution policy is explicit so callbacks are never
+unexpectedly invoked from arbitrary internal threads:
 
 ```text
 ZIPC_CALLBACK_INLINE        callback runs in the progress function
@@ -210,12 +218,16 @@ A representative acceptance profile:
 
 ## Observability by design
 
-zIPC is observable by design rather than reverse-engineered afterwards. Every
-important operation optionally emits a fixed-format trace event carrying
-identity (`link_id`, `message_id`, `correlation_id`, `endpoint_id`,
-`backend_cookie`), context (`pid`, `tid`, `timestamp`, `event`, `flags`), and
-state (`length`, `queue_depth`). Emitting is opt-in and zero-cost when
-disabled:
+The current v0.1.10 implementation records fixed-depth per-slot entries for
+allocation, send, receive, release, recovery, and error transitions. Each
+entry contains a timestamp, transfer sequence, component ID, and event type;
+`zipc-stat` exposes those entries.
+
+Future versions will add an optional fixed-format native trace contract rather
+than requiring later reverse engineering. The planned event carries identity
+(`link_id`, `message_id`, `correlation_id`, `endpoint_id`, `backend_cookie`),
+context (`pid`, `tid`, `timestamp`, `event`, `flags`), and state (`length`,
+`queue_depth`). Emission should be opt-in and zero-cost when disabled:
 
 ```c
 #ifdef ZIPC_TRACE_ENABLE
@@ -227,22 +239,22 @@ disabled:
 
 ### Two trace layers
 
-1. **Protocol layer** — native zIPC tracepoints:
+1. **Protocol layer** — planned native zIPC tracepoints:
    `LINK_CREATE`, `LINK_READY`, `LINK_DOWN`; `SEND_BEGIN`, `SEND_QUEUE`,
    `SEND_BACKEND`, `SEND_DONE`; `RECV_BACKEND`, `RECV_QUEUE`, `RECV_DELIVER`,
    `RECV_DONE`; `DROP`, `TIMEOUT`, `RETRY`, `BACKPRESSURE`;
    `CALLBACK_BEGIN`, `CALLBACK_END`.
 2. **Backend/kernel layer** — observation of the underlying transport.
 
-Correlating both layers is almost deterministic (no heuristics), because
-`message_id` flows end-to-end. zIPC should require *less* eBPF/inference over
-time, not more.
+Once `message_id` is implemented end-to-end, correlating both layers should be
+almost deterministic rather than heuristic. zIPC should require *less*
+eBPF/inference over time, not more.
 
 ### Tool-neutral trace contract
 
-The zIPC trace event model is a single normalized protocol. Tools (CTF,
-pcapng for Wireshark, Perfetto) are exporters from one semantic model, not
-four separate formats. Identity is the backbone of the model:
+The planned zIPC trace event model is a single normalized protocol. Tools
+(CTF, pcapng for Wireshark, Perfetto) will be exporters from one semantic
+model, not four separate formats. Identity is the backbone of the model:
 
 ```text
 timestamp  source  layer  pid/tid  cpu
@@ -251,8 +263,8 @@ event_type  direction  length  queue_depth
 transport  transport_id  payload_head  payload_tail  fingerprint
 ```
 
-Backend targets: Linux USDT/tracepoints, FreeRTOS and bare-metal compact
-binary rings.
+Planned backend targets: Linux USDT/tracepoints, FreeRTOS and bare-metal
+compact binary rings.
 
 ## Reference learning from NNG and RPMsg
 
@@ -284,9 +296,11 @@ zIPC state ordering and cache coherency are separate concerns.
 - Linux production use should rely on a driver and the DMA API where applicable.
 - Initial R5 bring-up should use Normal non-cacheable shared memory.
 
-## Identity model
+## Planned identity model
 
-zIPC distinguishes identities that other systems conflate:
+The current protocol identifies components, generation-protected slots, and
+transfer sequences. Future versions will additionally distinguish identities
+that other systems conflate:
 
 ```text
 link_id          stable identity of one logical connection
@@ -302,8 +316,8 @@ backend_cookie   maps zIPC activity onto the underlying backend (NNG, Unix,
 ```
 
 These values must not be conflated. In particular, pointer-valued cookies are
-local to one address space and must never be transported. `message_id`
-accompanying each send/receive makes end-to-end correlation deterministic
-across protocol and backend layers; `backend_cookie` lets observability map
+local to one address space and must never be transported. A future `message_id`
+accompanying each send/receive will make end-to-end correlation deterministic
+across protocol and backend layers; `backend_cookie` will let observability map
 zIPC activity to the concrete transport without guessing. A stable `link_id`
 and local opaque `link_cookie` are v0.2 work.

@@ -1,6 +1,8 @@
 #define _POSIX_C_SOURCE 200809L
 #include <zipc/zipc.h>
 
+#include <ctype.h>
+#include <errno.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,9 +34,15 @@ static const char *event_name(uint16_t event)
 
 static uint32_t parse_u32(const char *s)
 {
+    if (s[0] == '-' || isspace((unsigned char)s[0])) {
+        fprintf(stderr, "invalid number: %s\n", s);
+        exit(2);
+    }
     char *end = NULL;
-    unsigned long value = strtoul(s, &end, 0);
-    if (end == s || *end != '\0' || value > UINT32_MAX) {
+    errno = 0;
+    const unsigned long value = strtoul(s, &end, 0);
+    if (errno == ERANGE || end == s || *end != '\0' ||
+        value == 0U || value > UINT32_MAX) {
         fprintf(stderr, "invalid number: %s\n", s);
         exit(2);
     }
@@ -71,14 +79,17 @@ int main(int argc, char **argv)
         .size = control_size + payload_size + 64U,
         .backend.posix = {.name = name, .create = false, .unlink_on_close = false}
     };
-    if (zipc_platform_memory_open(&memory, &memory_cfg) != ZIPC_OK) {
+    const zipc_status_t open_status =
+        zipc_platform_memory_open(&memory, &memory_cfg);
+    if (open_status != ZIPC_OK) {
         fprintf(stderr,
-                "cannot open zIPC pool %s: no such pool\n"
+                "cannot open zIPC pool %s (status=%d)\n"
                 "  zipc-stat only observes an already-running pool; it never creates one.\n"
                 "  Start the application first, then run:\n"
                 "    %s --name %s --slots %u --capacity %u\n"
-                "  and pass --slots/--capacity exactly as the pool was created.\n",
-                name, argv[0], name, slots, capacity);
+                "  Pass --slots/--capacity exactly as the pool was created, and check\n"
+                "  the POSIX shared-memory object and permissions under /dev/shm.\n",
+                name, (int)open_status, argv[0], name, slots, capacity);
         return 1;
     }
 
@@ -97,9 +108,11 @@ int main(int argc, char **argv)
     if (zipc_pool_attach(&pool, &pool_cfg) != ZIPC_OK) {
         fprintf(stderr,
                 "pool geometry/ABI mismatch for %s\n"
-                "  --slots %u and --capacity %u do not match the live pool; verify with:\n"
-                "    ipcs -m\n",
-                name, slots, capacity);
+                "  The slot count, capacity, stride, alignment, flags, or ABI do not\n"
+                "  match the live pool. zipc-stat currently supports conventional\n"
+                "  contiguous pools with derived stride and 64-byte alignment.\n"
+                "  Verify the layout against the pool creator's configuration.\n",
+                name);
         zipc_platform_memory_close(memory);
         return 1;
     }

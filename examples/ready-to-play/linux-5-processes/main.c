@@ -152,6 +152,7 @@ int main(void)
            (unsigned)LINK_COUNT, 0U, 1U, (unsigned)(LINK_COUNT - 1U),
            (unsigned)LINK_COUNT);
 
+    fflush(NULL);
     for (unsigned int i = 0U; i < PROCESS_COUNT; ++i) {
         children[i] = fork();
         if (children[i] < 0) {

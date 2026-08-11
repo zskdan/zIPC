@@ -244,7 +244,8 @@ cc app.c -Iinclude -Lbuild/libs -lzipc -pthread -lrt
 
 Linux build outputs are grouped under `build/`: `build/libs/`,
 `build/examples/`, `build/tests/`, `build/utilities/`, and `build/docs/`
-(Doxygen). `make all` builds everything including the library.
+(Doxygen). `make all` builds every binary and the library; `make docs` builds
+the Doxygen output separately when Doxygen is installed.
 
 ## v0.1.1 target-oriented integration tests
 

@@ -17,8 +17,13 @@ latency reporting.
 
 ```sh
 ./build/utilities/zipc-ping --count 100
-./build/utilities/zipc-ping --relays 3 --count 100
+./build/utilities/zipc-ping --relays 3 --count 100 --interval 0.25 --timeout 2
 ```
+
+Probes are sent at one-second intervals by default. `--interval 0` disables the
+delay, and `--timeout` controls the bounded reply wait (five seconds by
+default). Invalid, negative, non-finite, and partially parsed values are
+rejected.
 
 The utility uses POSIX shared memory and shared SPSC rings with eventfd
 notification. All Linux processes use `CLOCK_MONOTONIC_RAW`, so one-way and
@@ -26,10 +31,13 @@ per-hop timestamps share the same host clock domain.
 
 Output fields:
 
-- `rtt`: source send to source reply reception.
+- `time`: round-trip time from source send to source reply reception.
 - `forward`: source departure to final destination arrival.
 - `hops`: one-way latency for each forward link.
 - `hop_count`: total zIPC component claims, including the return path.
+
+The final summary reports transmitted and received probes, packet loss, and
+round-trip minimum/average/maximum in microseconds.
 
 For cross-processor or cross-machine one-way measurements, the participating
 clocks must be synchronized. RTT does not require clock synchronization.
@@ -93,6 +101,10 @@ Inspect a live POSIX-shared-memory pool created with matching geometry:
 ```
 
 Add `--all` to include free slots. The output contains pool counters, component epochs and heartbeats, slot owner/age/hop limits, recovery counts, and the retained trace entries.
+
+The observer supports conventional contiguous pools with derived slot stride
+and 64-byte alignment. Explicit-stride, guard-page, and other custom layouts
+require future geometry-discovery support.
 
 
 ## Backend terminology
