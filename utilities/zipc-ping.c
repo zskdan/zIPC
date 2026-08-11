@@ -56,10 +56,17 @@ static uint64_t now_ns(void)
 static void run_component(unsigned int index,
                           unsigned int component_count,
                           unsigned int iterations,
+                          double interval_s,
                           edge_link_t *forward,
                           edge_link_t *reverse)
 {
     if (index == 0U) {
+        printf("PING zIPC chain: %u components (%u relays), %u probes, %.3f s interval\n",
+               component_count, component_count - 2U, iterations, interval_s);
+        fflush(stdout);
+        uint64_t min_us = UINT64_MAX;
+        uint64_t max_us = 0U;
+        uint64_t sum_us = 0U;
         for (unsigned int it = 0; it < iterations; ++it) {
             zipc_buffer_t buffer;
             CHECK(zipc_buffer_alloc_ex(forward[0].sender, 0U, 0U, 0U, &buffer));
@@ -74,22 +81,51 @@ static void run_component(unsigned int index,
             CHECK(zipc_recv(reverse[0].receiver, &buffer));
             const uint64_t done = now_ns();
             const ping_payload_t *reply = zipc_buffer_data(&buffer);
-            const double rtt_us = (double)(done - reply->depart_ns[0]) / 1000.0;
-            const double one_way_us =
-                (double)(reply->arrival_ns[component_count - 1U] -
-                         reply->depart_ns[0]) / 1000.0;
-            printf("seq=%" PRIu64 " rtt=%.3f us forward=%.3f us hops=",
-                   reply->sequence, rtt_us, one_way_us);
-            for (unsigned int hop = 1U; hop < component_count; ++hop) {
-                const double hop_us =
-                    (double)(reply->arrival_ns[hop] -
-                             reply->depart_ns[hop - 1U]) / 1000.0;
-                printf("%s%.3f", hop == 1U ? "" : ",", hop_us);
+            const uint64_t rtt_us = (done - reply->depart_ns[0]) / 1000U;
+            if (rtt_us < min_us)
+                min_us = rtt_us;
+            if (rtt_us > max_us)
+                max_us = rtt_us;
+            sum_us += rtt_us;
+            printf("reply seq=%" PRIu64 " time=%" PRIu64 ".%03" PRIu64 " us",
+                   reply->sequence, rtt_us / 1000U, rtt_us % 1000U);
+            if (component_count > 2U) {
+                const uint64_t one_way_us =
+                    (reply->arrival_ns[component_count - 1U] -
+                     reply->depart_ns[0]) / 1000U;
+                printf(" forward=%" PRIu64 ".%03" PRIu64 " us hops=[",
+                       one_way_us / 1000U, one_way_us % 1000U);
+                for (unsigned int hop = 1U; hop < component_count; ++hop) {
+                    const uint64_t hop_us =
+                        (reply->arrival_ns[hop] - reply->depart_ns[hop - 1U]) / 1000U;
+                    printf("%s%" PRIu64 ".%03" PRIu64, hop == 1U ? "" : ",",
+                           hop_us / 1000U, hop_us % 1000U);
+                }
+                printf("]");
             }
-            printf(" us hop_count=%u\n", zipc_buffer_hop_count(&buffer));
+            printf(" hop_count=%u\n", zipc_buffer_hop_count(&buffer));
             fflush(stdout);
             CHECK(zipc_buffer_release(&buffer));
+
+            if (interval_s > 0.0 && it + 1U < iterations) {
+                const long secs = (long)interval_s;
+                const long nsecs = (long)((interval_s - (double)secs) * 1000000000.0);
+                struct timespec sleep_time = { .tv_sec = secs, .tv_nsec = nsecs };
+                while (nanosleep(&sleep_time, &sleep_time) != 0 && errno == EINTR)
+                    continue;
+            }
         }
+        printf("--- zIPC chain ping statistics ---\n");
+        printf("%u packets transmitted, %u received, %.1f%% packet loss\n",
+               iterations, iterations, 0.0);
+        if (iterations > 0U) {
+            printf("rtt min/avg/max = %" PRIu64 ".%03" PRIu64 "/%" PRIu64 ".%03"
+                   PRIu64 "/%" PRIu64 ".%03" PRIu64 " us\n",
+                   min_us / 1000U, min_us % 1000U,
+                   (sum_us / iterations) / 1000U, (sum_us / iterations) % 1000U,
+                   max_us / 1000U, max_us % 1000U);
+        }
+        fflush(stdout);
         _exit(EXIT_SUCCESS);
     }
 
@@ -115,15 +151,22 @@ static void run_component(unsigned int index,
 
 static void usage(const char *program)
 {
-    fprintf(stderr, "Usage: %s [--relays N] [--count N]\n", program);
+    fprintf(stderr,
+            "Usage: %s [--relays N] [--count N] [--interval SECONDS]\n"
+            "  --relays N        number of relay components (default 0)\n"
+            "  --count N         number of probes (default 10)\n"
+            "  --interval SECONDS  delay between probes (default 1; 0 disables)\n",
+            program);
 }
 
 int main(int argc, char **argv)
 {
     unsigned int relay_count = 0U;
     unsigned int iterations = 10U;
+    double interval_s = 1.0;
     bool relays_set = false;
     bool count_set = false;
+    bool interval_set = false;
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--relays") == 0 && i + 1 < argc) {
             relay_count = (unsigned int)strtoul(argv[++i], NULL, 0);
@@ -131,19 +174,24 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[i], "--count") == 0 && i + 1 < argc) {
             iterations = (unsigned int)strtoul(argv[++i], NULL, 0);
             count_set = true;
+        } else if (strcmp(argv[i], "--interval") == 0 && i + 1 < argc) {
+            interval_s = strtod(argv[++i], NULL);
+            interval_set = true;
         } else {
             usage(argv[0]);
             return EXIT_FAILURE;
         }
     }
     const unsigned int component_count = relay_count + 2U;
-    if (component_count > MAX_COMPONENTS || iterations == 0U) {
+    if (component_count > MAX_COMPONENTS || iterations == 0U ||
+        interval_s < 0.0) {
         usage(argv[0]);
         return EXIT_FAILURE;
     }
-    printf("config: relays=%u%s count=%u%s\n",
+    printf("config: relays=%u%s count=%u%s interval=%.3f%s\n",
            relay_count, relays_set ? "" : " (default)",
-           iterations, count_set ? "" : " (default)");
+           iterations, count_set ? "" : " (default)",
+           interval_s, interval_set ? "" : " (default)");
     const unsigned int edge_count = component_count - 1U;
 
     char shm_name[64];
@@ -229,7 +277,8 @@ int main(int argc, char **argv)
             return EXIT_FAILURE;
         }
         if (children[i] == 0)
-            run_component(i, component_count, iterations, forward, reverse);
+            run_component(i, component_count, iterations, interval_s,
+                          forward, reverse);
     }
 
     int result = EXIT_SUCCESS;

@@ -103,7 +103,7 @@ test: all guard-pages version-linux api-simplified topology-config strict-owners
 	./build/zipc-integration-freertos
 	./build/zipc-integration-baremetal
 	./build/zipc-ready-linux5
-	./build/zipc-ping --relays 2 --count 3
+	./build/zipc-ping --relays 2 --count 3 --interval 0
 	./build/zipc-membench --backend posix --size 4M --iterations 2
 	./build/zipc-packetrate --transport ring-eventfd --packets 10000 --payload 8
 
