@@ -12,8 +12,8 @@ extern "C" {
 
 #define ZIPC_VERSION_MAJOR        0U
 #define ZIPC_VERSION_MINOR        1U
-#define ZIPC_VERSION_PATCH        9U
-#define ZIPC_VERSION_STRING       "0.1.9"
+#define ZIPC_VERSION_PATCH        10U
+#define ZIPC_VERSION_STRING       "0.1.10"
 
 #define ZIPC_POOL_MAGIC             UINT32_C(0x5A495043)
 #define ZIPC_POOL_ABI_VERSION       UINT16_C(1)

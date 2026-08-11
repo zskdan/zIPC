@@ -214,5 +214,5 @@ const char *version = zipc_version_string();
 ```
 
 `zipc_version_string()` always returns the immutable library version string,
-for example `"0.1.9"`. It is safe to call at any time and the returned pointer
+for example `"0.1.10"`. It is safe to call at any time and the returned pointer
 is valid for the lifetime of the library.

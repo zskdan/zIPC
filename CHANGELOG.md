@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.1.10
+
+- Added library version API: `ZIPC_VERSION_MAJOR`/`MINOR`/`PATCH`/`STRING`
+  macros and `zipc_version_string()`; version identity aligned to v0.1.9
+  across VERSION, README, Doxyfile, AGENTS, and handoff docs.
+- Added producer-side output to the basic example, ping-style output and
+  `--interval` option to `zipc-ping`, clearer `zipc-stat` diagnostics,
+  sender-side transfer prints in the Linux integration test, lifecycle/PID
+  prints in the ready-linux5 example, and self-explanatory shared-buffer-chain
+  output.
+- Restructured Linux build outputs: `build/examples`, `build/tests`,
+  `build/utilities`, `build/libs`, `build/docs`.
+- Added `make libs` producing `build/libs/libzipc.a`; all Linux examples,
+  tests, and utilities link against it.
+- Captured the no-hidden-threads execution model, observability-by-design,
+  and identity contract in `docs/ARCHITECTURE.md`; consolidated the roadmap
+  with observability, execution-model, and benchmarking workstreams plus a
+  hardening backlog.
+
 ## v0.1.9
 
 - Release of the buffer-offset API work as v0.1.9.

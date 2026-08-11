@@ -1,4 +1,4 @@
-# zIPC v0.1.9
+# zIPC v0.1.10
 
 zIPC is an experimental chained zero-copy IPC protocol. A component allocates
 a fixed slot from a shared pool, processes the payload in place, and transfers
@@ -10,7 +10,7 @@ processing passes and `visited_mask` records distinct components.
 
 
 
-## Application API (v0.1.9)
+## Application API (v0.1.10)
 
 The normal application path is intentionally small:
 
