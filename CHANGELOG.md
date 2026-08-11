@@ -1,18 +1,9 @@
 # Changelog
 
-## v0.1.19
-
-- Release of the buffer-offset API work (previously published as v0.1.9) as v0.1.19.
-- Includes `zipc_buffer_at(buffer, offset, length)`, stable fixed buffer offsets, zero-copy `trim_front`/`trim_back`, topology configuration, guard-page, strict-ownership, and simplified-API regression tests.
-
 ## v0.1.9
 
-- Added `zipc_buffer_at(buffer, offset, length)` for ownership-checked absolute access within complete buffer storage.
-- Defined public buffer offsets relative to buffer storage offset zero, independent of the current logical data window.
-- Documented and tested zero-copy `trim_front`/`trim_back` semantics and stable fixed offsets across trims.
-- Kept `zipc_buffer_capacity()`, `zipc_buffer_resize()`, and `zipc_buffer_const_data()` only as v0.x compatibility APIs.
-- Updated the A->B->C shared-buffer example to use `zipc_buffer_at()` instead of application pointer arithmetic.
-- Updated public Doxygen, API documentation, README, examples, and regression tests.
+- Release of the buffer-offset API work as v0.1.9.
+- Includes `zipc_buffer_at(buffer, offset, length)`, stable fixed buffer offsets, zero-copy `trim_front`/`trim_back`, topology configuration, guard-page, strict-ownership, and simplified-API regression tests.
 
 ## v0.1.8
 

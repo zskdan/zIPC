@@ -1,17 +1,17 @@
-# Codex handoff — zIPC v0.1.4
+# Codex handoff — zIPC v0.1.9
 
 ## Objective
 
-Continue development of zIPC from the supplied v0.1.4 repository. This file
+Continue development of zIPC from the supplied v0.1.9 repository. This file
 captures the design context and implementation expectations that were developed
 before the repository was handed to Codex.
 
 ## Current release
 
-- Version: `0.1.1`
+- Version: `0.1.9`
 - Pool ABI: `1`
 - Status: experimental prototype; public API and shared-memory ABI are not stable.
-- Immediate instruction: inspect and validate v0.1.4 before implementing v0.2.
+- Immediate instruction: inspect and validate v0.1.9 before implementing v0.2.
 
 Recommended first task:
 

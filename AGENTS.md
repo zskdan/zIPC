@@ -5,7 +5,7 @@ These instructions apply to the complete repository unless a more specific
 
 ## Project status
 
-- Current release: **v0.1.1**.
+- Current release: **v0.1.9**.
 - The project is an experimental chained zero-copy IPC protocol.
 - The public API and shared-memory ABI are not stable before v1.0.
 - The next planned milestone is v0.2, but do not implement it unless explicitly requested.
