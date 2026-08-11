@@ -36,14 +36,14 @@ The example also demonstrates the two topology configuration sources. With no
 argument it registers the compiled `zipc_config.h` topology:
 
 ```sh
-./build/zipc-shared-buffer-chain
+./build/examples/zipc-shared-buffer-chain
 ```
 
 On hosted/Linux systems the same data path can instead load the equivalent INI
 configuration:
 
 ```sh
-./build/zipc-shared-buffer-chain \
+./build/examples/zipc-shared-buffer-chain \
     --config examples/shared-buffer-chain/zipc.conf
 ```
 

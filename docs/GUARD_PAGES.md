@@ -77,7 +77,7 @@ logical access control.
 
 ```bash
 make guard-pages
-./build/zipc-guard-pages-linux
+./build/tests/zipc-guard-pages-linux
 ```
 
 The test verifies that:

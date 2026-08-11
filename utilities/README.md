@@ -16,8 +16,8 @@ Optional relay processes record arrival/departure timestamps, allowing per-hop
 latency reporting.
 
 ```sh
-./build/zipc-ping --count 100
-./build/zipc-ping --relays 3 --count 100
+./build/utilities/zipc-ping --count 100
+./build/utilities/zipc-ping --relays 3 --count 100
 ```
 
 The utility uses POSIX shared memory and shared SPSC rings with eventfd
@@ -40,12 +40,12 @@ Measures sequential writes and cache-line-stride reads through a selected zIPC
 memory backend.
 
 ```sh
-./build/zipc-membench --backend posix --size 64M --iterations 20
-./build/zipc-membench --backend hugepages \
+./build/utilities/zipc-membench --backend posix --size 64M --iterations 20
+./build/utilities/zipc-membench --backend hugepages \
     --path /dev/hugepages/zipc_bench --size 64M
-sudo ./build/zipc-membench --backend dtrevmem-cached \
+sudo ./build/utilities/zipc-membench --backend dtrevmem-cached \
     --phys 0x70000000 --size 64M
-sudo ./build/zipc-membench --backend dtrevmem-uncached \
+sudo ./build/utilities/zipc-membench --backend dtrevmem-uncached \
     --phys 0x70000000 --size 64M
 ```
 
@@ -66,11 +66,11 @@ Measures the maximum sustained descriptor/packet rate of a selected Linux
 transport backend while the payload remains in the zIPC slot pool.
 
 ```sh
-./build/zipc-packetrate --transport ring-eventfd \
+./build/utilities/zipc-packetrate --transport ring-eventfd \
     --packets 1000000 --payload 8
-./build/zipc-packetrate --transport fifo --packets 100000
-./build/zipc-packetrate --transport unix-dgram --packets 100000
-./build/zipc-packetrate --transport mqueue --packets 100000
+./build/utilities/zipc-packetrate --transport fifo --packets 100000
+./build/utilities/zipc-packetrate --transport unix-dgram --packets 100000
+./build/utilities/zipc-packetrate --transport mqueue --packets 100000
 ```
 
 Supported transports:
@@ -89,7 +89,7 @@ and release, not just the underlying OS notification primitive.
 Inspect a live POSIX-shared-memory pool created with matching geometry:
 
 ```sh
-./build/zipc-stat --name /zipc_pool --slots 64 --capacity 4096
+./build/utilities/zipc-stat --name /zipc_pool --slots 64 --capacity 4096
 ```
 
 Add `--all` to include free slots. The output contains pool counters, component epochs and heartbeats, slot owner/age/hop limits, recovery counts, and the retained trace entries.

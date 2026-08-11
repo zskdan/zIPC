@@ -206,7 +206,7 @@ Three integration-oriented examples are available under `examples/ready-to-play/
 
    ```bash
    make ready-linux5
-   ./build/zipc-ready-linux5
+   ./build/examples/zipc-ready-linux5
    ```
 
 2. **`freertos-5-tasks/`** — five FreeRTOS tasks on R5_0 using Normal non-cacheable reserved memory and direct-to-task notifications. It requires only one reserved R5 memory region and no OpenAMP/IPI setup.
@@ -230,14 +230,30 @@ make utilities
 
 See [`utilities/README.md`](utilities/README.md) for command-line examples and measurement semantics.
 
+### Static library and build layout
+
+`make libs` builds the Linux userspace library at `build/libs/libzipc.a`
+(core protocol plus the Linux common/user platform code). All Linux examples,
+tests, and utilities link against it; the FreeRTOS and bare-metal targets
+compile the core directly and are not part of the library.
+
+```sh
+make libs          # produces build/libs/libzipc.a
+cc app.c -Iinclude -Lbuild/libs -lzipc -pthread -lrt
+```
+
+Linux build outputs are grouped under `build/`: `build/libs/`,
+`build/examples/`, `build/tests/`, `build/utilities/`, and `build/docs/`
+(Doxygen). `make all` builds everything including the library.
+
 ## v0.1.1 target-oriented integration tests
 
 Two host-buildable integration harnesses exercise the real target platform adapters:
 
 ```bash
 make integration-targets
-./build/zipc-integration-freertos
-./build/zipc-integration-baremetal
+./build/tests/zipc-integration-freertos
+./build/tests/zipc-integration-baremetal
 ```
 
 - `tests/integration-freertos.c` validates DT-reserved-memory mapping, the FreeRTOS queue transport, component epochs, slot transfer, and the high-level link/buffer API.

@@ -65,6 +65,7 @@ tests/stubs/openamp/open_amp.h
 tests/stubs/queue.h
 tests/stubs/task.h
 tests/topology-config-linux.c
+tests/version-linux.c
 utilities/README.md
 utilities/zipc-membench.c
 utilities/zipc-packetrate.c

@@ -25,7 +25,7 @@ Build and run from the project root:
 
 ```bash
 make ready-linux5
-./build/zipc-ready-linux5
+./build/examples/zipc-ready-linux5
 ```
 
 Expected output:

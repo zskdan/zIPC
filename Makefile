@@ -1,4 +1,5 @@
 CC ?= cc
+AR ?= ar
 CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Werror
 CPPFLAGS += -Iinclude -Iplatform/linux/common
 LDLIBS += -pthread -lrt
@@ -7,105 +8,121 @@ CORE := src/core/zipc.c src/core/zipc-backends.c
 LINUX_COMMON := platform/linux/common/platform-linux-common.c
 LINUX_USER := platform/linux/user/platform-linux-user.c platform/linux/user/zipc-topology-file.c
 
-.PHONY: all clean test basic integration integration-targets integration-freertos integration-baremetal guard-pages version-linux api-simplified topology-config strict-ownership ready-linux5 ready-to-play utilities ping membench transport-bench stat list-platforms docs shared-buffer-chain
+ZIPC_LIB := build/libs/libzipc.a
+ZIPC_OBJS := build/libs/obj/zipc.o build/libs/obj/zipc-backends.o \
+             build/libs/obj/platform-linux-common.o \
+             build/libs/obj/platform-linux-user.o \
+             build/libs/obj/zipc-topology-file.o
 
-all: basic integration build/zipc-resilience-linux integration-targets guard-pages version-linux api-simplified topology-config strict-ownership shared-buffer-chain ready-linux5 utilities
+EXAMPLE_BINS := build/examples/zipc-basic \
+                build/examples/zipc-shared-buffer-chain \
+                build/examples/zipc-ready-linux5
+TEST_BINS := build/tests/zipc-integration-linux build/tests/zipc-resilience-linux \
+             build/tests/zipc-guard-pages-linux build/tests/zipc-version-linux \
+             build/tests/zipc-api-simplified-linux \
+             build/tests/zipc-topology-config-linux \
+             build/tests/zipc-strict-ownership-linux \
+             build/tests/zipc-integration-freertos \
+             build/tests/zipc-integration-baremetal
+UTILITY_BINS := build/utilities/zipc-ping build/utilities/zipc-membench \
+                build/utilities/zipc-packetrate build/utilities/zipc-stat
 
-basic: build/zipc-basic
-integration: build/zipc-integration-linux
+.PHONY: all clean test libs basic integration integration-targets integration-freertos \
+        integration-baremetal guard-pages version-linux api-simplified topology-config \
+        strict-ownership ready-linux5 ready-to-play utilities ping membench \
+        transport-bench stat list-platforms docs shared-buffer-chain
 
-integration-targets: integration-freertos integration-baremetal
-integration-freertos: build/zipc-integration-freertos
-integration-baremetal: build/zipc-integration-baremetal
-guard-pages: build/zipc-guard-pages-linux
-version-linux: build/zipc-version-linux
-api-simplified: build/zipc-api-simplified-linux
-topology-config: build/zipc-topology-config-linux
-strict-ownership: build/zipc-strict-ownership-linux
-shared-buffer-chain: build/zipc-shared-buffer-chain
-ready-linux5: build/zipc-ready-linux5
-ready-to-play: ready-linux5
+all: libs basic integration build/tests/zipc-resilience-linux integration-targets \
+     guard-pages version-linux api-simplified topology-config strict-ownership \
+     shared-buffer-chain ready-linux5 utilities
 
-utilities: ping membench transport-bench stat
-ping: build/zipc-ping
-membench: build/zipc-membench
-transport-bench: build/zipc-packetrate
-stat: build/zipc-stat
+libs: $(ZIPC_LIB)
 
 build:
 	mkdir -p $@
+build/examples build/tests build/utilities build/libs build/libs/obj: build
+	mkdir -p $@
 
-build/zipc-basic: $(CORE) $(LINUX_COMMON) $(LINUX_USER) examples/basic/basic.c | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
+build/libs/obj/%.o: src/core/%.c | build/libs/obj
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+build/libs/obj/%.o: platform/linux/common/%.c | build/libs/obj
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+build/libs/obj/%.o: platform/linux/user/%.c | build/libs/obj
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
-build/zipc-integration-linux: $(CORE) $(LINUX_COMMON) $(LINUX_USER) tests/integration-linux.c | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
+$(ZIPC_LIB): $(ZIPC_OBJS) | build/libs
+	$(AR) rcs $@ $^
 
-build/zipc-resilience-linux: $(CORE) $(LINUX_COMMON) $(LINUX_USER) tests/resilience-linux.c | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
+build/examples/zipc-basic: $(ZIPC_LIB) examples/basic/basic.c | build/examples
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
+build/examples/zipc-shared-buffer-chain: $(ZIPC_LIB) examples/shared-buffer-chain/main.c | build/examples
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
+build/examples/zipc-ready-linux5: $(ZIPC_LIB) examples/ready-to-play/linux-5-processes/main.c | build/examples
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
 
+build/tests/zipc-integration-linux: $(ZIPC_LIB) tests/integration-linux.c | build/tests
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
+build/tests/zipc-resilience-linux: $(ZIPC_LIB) tests/resilience-linux.c | build/tests
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
+build/tests/zipc-guard-pages-linux: $(ZIPC_LIB) tests/guard-pages-linux.c | build/tests
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
+build/tests/zipc-version-linux: $(ZIPC_LIB) tests/version-linux.c | build/tests
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
+build/tests/zipc-api-simplified-linux: $(ZIPC_LIB) tests/api-simplified-linux.c | build/tests
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
+build/tests/zipc-topology-config-linux: $(ZIPC_LIB) tests/topology-config-linux.c | build/tests
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
+build/tests/zipc-strict-ownership-linux: $(ZIPC_LIB) tests/strict-ownership-linux.c | build/tests
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
 
+build/tests/zipc-integration-freertos: $(CORE) platform/freertos/platform-freertos.c tests/stubs/freertos-stubs.c tests/integration-freertos.c | build/tests
+	$(CC) -Itests/stubs $(CPPFLAGS) $(CFLAGS) $^ -o $@
+build/tests/zipc-integration-baremetal: $(CORE) platform/baremetal/platform-baremetal.c tests/stubs/baremetal-stubs.c tests/integration-baremetal.c | build/tests
+	$(CC) -Itests/stubs $(CPPFLAGS) $(CFLAGS) $^ -o $@
 
-build/zipc-shared-buffer-chain: $(CORE) $(LINUX_COMMON) $(LINUX_USER) examples/shared-buffer-chain/main.c | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
+build/utilities/%: $(ZIPC_LIB) utilities/%.c | build/utilities
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
+
+basic: build/examples/zipc-basic
+integration: build/tests/zipc-integration-linux
+integration-targets: integration-freertos integration-baremetal
+integration-freertos: build/tests/zipc-integration-freertos
+integration-baremetal: build/tests/zipc-integration-baremetal
+guard-pages: build/tests/zipc-guard-pages-linux
+version-linux: build/tests/zipc-version-linux
+api-simplified: build/tests/zipc-api-simplified-linux
+topology-config: build/tests/zipc-topology-config-linux
+strict-ownership: build/tests/zipc-strict-ownership-linux
+shared-buffer-chain: build/examples/zipc-shared-buffer-chain
+ready-linux5: build/examples/zipc-ready-linux5
+ready-to-play: ready-linux5
+
+utilities: ping membench transport-bench stat
+ping: build/utilities/zipc-ping
+membench: build/utilities/zipc-membench
+transport-bench: build/utilities/zipc-packetrate
+stat: build/utilities/zipc-stat
 
 docs:
 	@command -v doxygen >/dev/null 2>&1 || { echo "doxygen not installed"; exit 2; }
 	doxygen Doxyfile
 
-build/zipc-api-simplified-linux: $(CORE) $(LINUX_COMMON) $(LINUX_USER) tests/api-simplified-linux.c | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
-
-build/zipc-topology-config-linux: $(CORE) $(LINUX_COMMON) $(LINUX_USER) tests/topology-config-linux.c | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
-
-build/zipc-strict-ownership-linux: $(CORE) $(LINUX_COMMON) $(LINUX_USER) tests/strict-ownership-linux.c | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
-
-build/zipc-guard-pages-linux: $(CORE) $(LINUX_COMMON) $(LINUX_USER) tests/guard-pages-linux.c | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
-
-build/zipc-version-linux: $(CORE) $(LINUX_COMMON) $(LINUX_USER) tests/version-linux.c | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
-
-
-build/zipc-integration-freertos: $(CORE) platform/freertos/platform-freertos.c tests/stubs/freertos-stubs.c tests/integration-freertos.c | build
-	$(CC) -Itests/stubs $(CPPFLAGS) $(CFLAGS) $^ -o $@
-
-build/zipc-integration-baremetal: $(CORE) platform/baremetal/platform-baremetal.c tests/stubs/baremetal-stubs.c tests/integration-baremetal.c | build
-	$(CC) -Itests/stubs $(CPPFLAGS) $(CFLAGS) $^ -o $@
-
-build/zipc-ready-linux5: $(CORE) $(LINUX_COMMON) $(LINUX_USER) examples/ready-to-play/linux-5-processes/main.c | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
-
-build/zipc-ping: $(CORE) $(LINUX_COMMON) $(LINUX_USER) utilities/zipc-ping.c | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
-
-build/zipc-membench: $(CORE) $(LINUX_COMMON) $(LINUX_USER) utilities/zipc-membench.c | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
-
-build/zipc-packetrate: $(CORE) $(LINUX_COMMON) $(LINUX_USER) utilities/zipc-packetrate.c | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
-
-build/zipc-stat: $(CORE) $(LINUX_COMMON) $(LINUX_USER) utilities/zipc-stat.c | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
-
-test: all guard-pages version-linux api-simplified topology-config strict-ownership shared-buffer-chain ready-linux5 utilities
-	./build/zipc-basic
-	./build/zipc-integration-linux
-	./build/zipc-resilience-linux
-	./build/zipc-guard-pages-linux
-	./build/zipc-version-linux
-	./build/zipc-api-simplified-linux
-	./build/zipc-topology-config-linux
-	./build/zipc-strict-ownership-linux
-	./build/zipc-shared-buffer-chain
-	./build/zipc-integration-freertos
-	./build/zipc-integration-baremetal
-	./build/zipc-ready-linux5
-	./build/zipc-ping --relays 2 --count 3 --interval 0
-	./build/zipc-membench --backend posix --size 4M --iterations 2
-	./build/zipc-packetrate --transport ring-eventfd --packets 10000 --payload 8
+test: all
+	./build/examples/zipc-basic
+	./build/tests/zipc-integration-linux
+	./build/tests/zipc-resilience-linux
+	./build/tests/zipc-guard-pages-linux
+	./build/tests/zipc-version-linux
+	./build/tests/zipc-api-simplified-linux
+	./build/tests/zipc-topology-config-linux
+	./build/tests/zipc-strict-ownership-linux
+	./build/examples/zipc-shared-buffer-chain
+	./build/tests/zipc-integration-freertos
+	./build/tests/zipc-integration-baremetal
+	./build/examples/zipc-ready-linux5
+	./build/utilities/zipc-ping --relays 2 --count 3 --interval 0
+	./build/utilities/zipc-membench --backend posix --size 4M --iterations 2
+	./build/utilities/zipc-packetrate --transport ring-eventfd --packets 10000 --payload 8
 
 list-platforms:
 	@printf '%s\n' \
