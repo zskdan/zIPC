@@ -175,3 +175,18 @@ vTaskStartScheduler();
 ```
 
 The depth-one task-notification transport assumes one outstanding descriptor per link. Replace it with a queue or shared ring when burst buffering is required.
+
+## Console output
+
+Each task prints the cumulative payload as soon as it has added its own stage,
+before forwarding it to the next task. `printf` must be wired to a UART or
+semihosting channel in the BSP. Expected output:
+
+```text
+T0: T0
+T1: T0->T1
+T2: T0->T1->T2
+T3: T0->T1->T2->T3
+T4: T0->T1->T2->T3->T4
+final: T0->T1->T2->T3->T4
+```

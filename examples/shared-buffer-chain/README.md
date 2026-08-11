@@ -48,3 +48,13 @@ configuration:
 ```
 
 The application send/receive/buffer logic is identical in both modes.
+
+Each component prints its view of the shared buffer as ownership passes through
+the chain. The handle values are runtime addresses:
+
+```text
+A: send handle=0x<runtime-handle> A=aaaaaaaa
+B: forward handle=0x<runtime-handle> A=aaaaaaaa B=bbbbbbbb
+C: recv handle=0x<runtime-handle> A=aaaaaaaa B=bbbbbbbb C=cccccccc
+same handle=0x<runtime-handle> A=aaaaaaaa B=bbbbbbbb C=cccccccc
+```

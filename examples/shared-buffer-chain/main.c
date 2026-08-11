@@ -74,21 +74,31 @@ int main(int argc, char **argv)
     memset(zipc_buffer_data(&buffer), 0, zipc_buffer_size(&buffer));
     if (put_u32(&buffer, 0x00U, UINT32_C(0xaaaaaaaa)) != 0) return 1;
     zipc_handle_t original = zipc_buffer_handle(&buffer);
+    uint32_t a_value;
+    if (get_u32(&buffer, 0x00U, &a_value) != 0) return 1;
+    printf("A: send handle=0x%016llx A=%08x\n",
+           (unsigned long long)original, a_value);
     CHECK_OK(zipc_send(ab_a, &buffer));
 
     CHECK_OK(zipc_recv(ab_b, &buffer));
     if (zipc_buffer_handle(&buffer) != original) return 1;
     if (put_u32(&buffer, 0x40U, UINT32_C(0xbbbbbbbb)) != 0) return 1;
+    uint32_t b_value;
+    if (get_u32(&buffer, 0x40U, &b_value) != 0) return 1;
+    printf("B: forward handle=0x%016llx A=%08x B=%08x\n",
+           (unsigned long long)original, a_value, b_value);
     CHECK_OK(zipc_send(bc_b, &buffer));
 
     CHECK_OK(zipc_recv(bc_c, &buffer));
     if (zipc_buffer_handle(&buffer) != original) return 1;
     if (put_u32(&buffer, 0x80U, UINT32_C(0xcccccccc)) != 0) return 1;
 
-    uint32_t a_value, b_value, c_value;
+    uint32_t c_value;
     if (get_u32(&buffer, 0x00U, &a_value) != 0 ||
         get_u32(&buffer, 0x40U, &b_value) != 0 ||
         get_u32(&buffer, 0x80U, &c_value) != 0) return 1;
+    printf("C: recv handle=0x%016llx A=%08x B=%08x C=%08x\n",
+           (unsigned long long)original, a_value, b_value, c_value);
     printf("same handle=0x%016llx A=%08x B=%08x C=%08x\n",
            (unsigned long long)original, a_value, b_value, c_value);
     CHECK_OK(zipc_buffer_release(&buffer));

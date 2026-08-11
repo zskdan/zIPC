@@ -31,6 +31,14 @@ make ready-linux5
 Expected output:
 
 ```text
+P0: P0
+P1: P0->P1
+P2: P0->P1->P2
+P3: P0->P1->P2->P3
+P4: P0->P1->P2->P3->P4
 final: P0->P1->P2->P3->P4
 hop_count=5 distinct=5
 ```
+
+Each process prints the cumulative payload as soon as it has added its own
+stage, before forwarding it to the next process.

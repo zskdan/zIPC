@@ -1,6 +1,8 @@
 #include <zipc/zipc.h>
 #include "../shared-layout.h"
 
+#include <stdio.h>
+
 extern zipc_message_t g_r5_ipi_mailbox;
 extern zipc_status_t board_ipi_wait_r5_0(void *context, uint32_t timeout);
 extern struct rpmsg_endpoint g_linux_rpmsg_endpoint;
@@ -61,5 +63,7 @@ int main(void)
         zipc_link_create(&to_linux, &tx_cfg) != ZIPC_OK) return 1;
     if (zipc_recv(from_r5_0, &buffer) != ZIPC_OK) return 1;
     if (zipc_buffer_append(&buffer, "->R5_1", 6U) != ZIPC_OK) return 1;
+    printf("R5_1: %.*s\n", (int)zipc_buffer_length(&buffer),
+           (const char *)zipc_buffer_data(&buffer));
     return zipc_send(to_linux, &buffer) == ZIPC_OK ? 0 : 1;
 }

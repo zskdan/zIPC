@@ -3,6 +3,8 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+#include <stdio.h>
+
 extern struct rpmsg_endpoint g_linux_rpmsg_endpoint;
 extern zipc_message_t g_rpmsg_rx_mailbox;
 extern QueueHandle_t g_rpmsg_rx_queue;
@@ -63,6 +65,8 @@ void zipc_r5_0_task(void *argument)
     configASSERT(zipc_link_create(&to_r5_1, &tx_cfg) == ZIPC_OK);
     configASSERT(zipc_recv(from_linux, &buffer) == ZIPC_OK);
     configASSERT(zipc_buffer_append(&buffer, "->R5_0", 6U) == ZIPC_OK);
+    printf("R5_0: %.*s\n", (int)zipc_buffer_length(&buffer),
+           (const char *)zipc_buffer_data(&buffer));
     configASSERT(zipc_send(to_r5_1, &buffer) == ZIPC_OK);
     vTaskDelete(NULL);
 }

@@ -48,3 +48,16 @@ The Linux driver should map the region as normal cached memory and expose `/dev/
 - `linux/process2.c`: receives, prints, and releases the slot.
 
 The board-specific symbols declared with `extern` are intentionally small integration hooks: OpenAMP endpoints/receive queues and IPI send/wait callbacks.
+
+## Console output
+
+Each stage prints the cumulative payload before forwarding it. The messages
+appear on each component's own console: Linux-P1 and Linux-P2 print on the A53
+terminal, while R5_0 and R5_1 print through their BSP UART channels.
+
+```text
+[Linux-P1] Linux-P1
+[R5_0]     Linux-P1->R5_0
+[R5_1]     Linux-P1->R5_0->R5_1
+[Linux-P2] final: Linux-P1->R5_0->R5_1
+```

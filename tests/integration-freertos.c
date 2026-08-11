@@ -72,11 +72,15 @@ int main(void)
     zipc_buffer_t buffer;
     CHECK(zipc_buffer_alloc_ex(tx, 0U, 16U, 0U, &buffer) == ZIPC_OK);
     CHECK(zipc_buffer_append(&buffer, "freertos", 9U) == ZIPC_OK);
+    printf("sender: send %.*s\n", (int)zipc_buffer_length(&buffer),
+           (const char *)zipc_buffer_data(&buffer));
     CHECK(zipc_send(tx, &buffer) == ZIPC_OK);
     CHECK(zipc_recv(rx, &buffer) == ZIPC_OK);
     CHECK(zipc_buffer_length(&buffer) == 9U);
     CHECK(memcmp(zipc_buffer_data(&buffer), "freertos", 9U) == 0);
     CHECK(zipc_buffer_hop_count(&buffer) == 2U);
+    printf("receiver: got %.*s\n", (int)zipc_buffer_length(&buffer),
+           (const char *)zipc_buffer_data(&buffer));
     CHECK(zipc_buffer_release(&buffer) == ZIPC_OK);
 
     zipc_link_destroy(rx);

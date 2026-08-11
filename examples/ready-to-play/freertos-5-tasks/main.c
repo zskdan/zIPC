@@ -39,6 +39,10 @@ static void stage_task(void *argument)
         check(zipc_buffer_append(&buffer, suffix, (uint32_t)n));
     }
 
+    printf("T%lu: %.*s\n", (unsigned long)index,
+           (int)zipc_buffer_length(&buffer),
+           (const char *)zipc_buffer_data(&buffer));
+
     if (index + 1U < TASK_COUNT) {
         check(zipc_send(g_tx[index], &buffer));
     } else {

@@ -44,6 +44,9 @@ static void child_run(unsigned int index,
     if (index == 0U) {
         CHECK_STATUS(zipc_buffer_alloc_ex(links[0].sender, 0U, 64U, 0U, &buffer));
         CHECK_STATUS(zipc_buffer_append(&buffer, "P0", 2U));
+        printf("P0: %.*s\n", (int)zipc_buffer_length(&buffer),
+               (const char *)zipc_buffer_data(&buffer));
+        fflush(stdout);
         CHECK_STATUS(zipc_send(links[0].sender, &buffer));
         _exit(EXIT_SUCCESS);
     }
@@ -53,6 +56,9 @@ static void child_run(unsigned int index,
     if (count < 0 || (size_t)count >= sizeof(stage))
         _exit(EXIT_FAILURE);
     CHECK_STATUS(zipc_buffer_append(&buffer, stage, (uint32_t)count));
+    printf("P%u: %.*s\n", index, (int)zipc_buffer_length(&buffer),
+           (const char *)zipc_buffer_data(&buffer));
+    fflush(stdout);
 
     if (index + 1U < PROCESS_COUNT) {
         CHECK_STATUS(zipc_send(links[index].sender, &buffer));
