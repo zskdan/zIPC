@@ -33,6 +33,9 @@ static void transfer(zipc_pool_t *pool,
     CHECK(zipc_platform_transport_send(link, &tx));
     CHECK(zipc_platform_transport_receive(link, &rx));
     CHECK(zipc_buffer_claim(pool, &rx, destination, buffer));
+    printf("transfer: C%u -> C%u seq=%u size=%u\n",
+           (unsigned)source, (unsigned)destination,
+           (unsigned)tx.transfer_sequence, (unsigned)zipc_buffer_size(buffer));
 }
 
 
