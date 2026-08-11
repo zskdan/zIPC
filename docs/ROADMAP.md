@@ -2,7 +2,8 @@
 
 The roadmap consolidates the initial proposal and subsequent requirements for
 link identity, cookies, message correlation, QoS, async callbacks, readiness,
-Doxygen documentation, and production deployment.
+Doxygen documentation, production deployment, and the observability and
+execution-model workstreams derived from NNG/RPMsg reference tracing.
 
 ## v0.1 — Resilience foundation
 
@@ -23,11 +24,89 @@ Completed:
 - Host-buildable bare-metal integration using the real adapter plus simulated IPI.
 - Integration targets included in `make test`.
 
+## v0.1.9 — Buffer-offset API and observable baseline
+
+Completed:
+
+- `zipc_buffer_at()` absolute offset access, stable fixed buffer offsets, and
+  zero-copy trim semantics; the A->B->C shared-buffer example uses it.
+- Topology configuration (static C, string, and file sources) behind one
+  canonical registry.
+- Guard-page regression test for out-of-bounds payload writes.
+- Strict-ownership regression test.
+- Library version identity aligned to v0.1.9 with `ZIPC_VERSION_*` macros and
+  `zipc_version_string()` runtime query.
+- Build restructure: `build/examples`, `build/tests`, `build/utilities`,
+  `build/libs`, `build/docs`; static `libzipc.a`; `make all` covers everything.
+- Self-explanatory example/utility output (basic producer, ping-style
+  `zipc-ping` with `--interval`, `zipc-stat` diagnostics, chain examples).
+- Execution model and observability-by-design principles captured in
+  `docs/ARCHITECTURE.md`.
+
+## Cross-version workstream: Observability & diagnostics
+
+NNG/RPMsg tracing is treated as zIPC requirements discovery, not throwaway
+debugging. The strategic goal: anything difficult to understand in NNG or
+RPMsg today is either eliminated in zIPC or made directly observable.
+
+- v0.1.x: trace event ABI; `link_id`/`link_cookie`; send/recv/link lifecycle
+  tracepoints; ipctrace compatibility (completed baseline: per-slot trace
+  entries, two-layer observability contract in ARCHITECTURE.md).
+- v0.2: `message_id`, `correlation_id`, protocol tracing, request/reply
+  visualization.
+- v0.3+: queue/backpressure telemetry, QoS tracing, async/callback tracing,
+  backend-specific instrumentation.
+- v1.0: stable trace ABI, Wireshark dissector and extcap, Perfetto exporter,
+  production diagnostics.
+
+Trace output stays tool-neutral: one normalized zIPC trace event model, with
+exporters to CTF, pcapng, and Perfetto rather than four divergent formats.
+
+## Cross-version workstream: Execution model
+
+Architectural principle: no hidden execution resources. zIPC SHALL operate
+without internally created threads; an optional shared reactor MAY create a
+bounded number of explicitly configured workers; thread creation SHALL never
+scale implicitly with links, endpoints, or messages.
+
+- v0.1.x: document the `INLINE`/`POLL`/`REACTOR` model and callback policies
+  (completed in ARCHITECTURE.md); verify the Linux path creates zero threads
+  with poll/epoll integration.
+- v0.2: `zipc_get_fd()`/`zipc_process()` event-loop integration; async API
+  without implied workers; explicit `ZIPC_CALLBACK_INLINE`/`DEFERRED`/
+  `USER_EXECUTOR` policy.
+- v0.4: shared request engine, deferred completion queues, dispatcher
+  integration for FreeRTOS and kernel workqueues (existing v0.4 scope).
+
+## Cross-version workstream: Benchmarking
+
+Version claims must be measurable ("zIPC v0.2 reduced application-to-backend
+latency by 23%"), not impressions. Per message: latency p50/p99/max,
+messages/second, CPU, syscalls, context switches, wakeups, copies and bytes
+copied, and per-stage latency. Acceptance metrics: threads per process,
+threads per socket, stack memory, scheduler latency. Target profile:
+2 applications, 20 links -> 2 application threads plus 0 zIPC threads
+(INLINE/POLL) or plus one reactor per process (REACTOR).
+
+## Hardening backlog (pull into upcoming releases)
+
+- `zipc_recv_timeout()` currently ignores its timeout argument and blocks
+  (src/core/zipc.c); define tick units, enforce timeouts per transport.
+- Validate `payload_offset`/`payload_stride` geometry at pool format time
+  (control end vs payload start, stride vs capacity + alignment).
+- Make `zipc_recv_timeout`/`zipc_send_timeout` semantics uniform across
+  transports and document deadline behavior on `ZIPC_ERR_TIMEOUT`.
+- Harden `/dev/mem` based DT-reserved-memory mappings; production access must
+  use a dedicated driver (v0.5 scope).
+- Extended soak/fault tests and sanitizer/static-analysis coverage (v0.9).
+
 ## v0.2 — Protocol identity, semantics, QoS model, async contract, and documentation
 
 - Stable logical `link_id`.
 - Local application-owned link cookie.
 - End-to-end `correlation_id` and optional persistent `flow_id`.
+- `message_id` per transmitted message and `backend_cookie` mapping to the
+  concrete transport; endpoint identity.
 - Payload type, protocol flags, priority, traffic class, and access intent.
 - Optional CRC32/integrity metadata.
 - Required/supported feature masks and version negotiation.
@@ -36,6 +115,9 @@ Completed:
   deadline, and drop policy.
 - Async public contract: request IDs, request cookies, completion events,
   cancellation API, delivery states, callback contexts, and ownership rules.
+- Execution model implementation: event-loop integration, callback policies,
+  zero-thread Linux path (see cross-version workstreams).
+- Trace ABI and lifecycle/send/recv tracepoints (see observability workstream).
 - Complete Doxygen comments for public headers and examples.
 - `Doxyfile` and `make docs` producing `build/docs/html/index.html`.
 
