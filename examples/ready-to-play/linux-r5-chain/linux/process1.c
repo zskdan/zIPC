@@ -42,7 +42,7 @@ int main(void)
         },
     };
     if (zipc_link_create(&link, &link_cfg) != ZIPC_OK) return 1;
-    if (zipc_buffer_get(link, 64U, &buffer) != ZIPC_OK) return 1;
+    if (zipc_buffer_alloc_ex(link, 0U, 64U, 0U, &buffer) != ZIPC_OK) return 1;
     if (zipc_buffer_append(&buffer, "Linux-P1", 8U) != ZIPC_OK) return 1;
     return zipc_send(link, &buffer) == ZIPC_OK ? 0 : 1;
 }

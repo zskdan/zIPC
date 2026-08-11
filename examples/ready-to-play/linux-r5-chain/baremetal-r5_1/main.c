@@ -59,7 +59,7 @@ int main(void)
     };
     if (zipc_link_create(&from_r5_0, &rx_cfg) != ZIPC_OK ||
         zipc_link_create(&to_linux, &tx_cfg) != ZIPC_OK) return 1;
-    if (zipc_receive(from_r5_0, &buffer) != ZIPC_OK) return 1;
+    if (zipc_recv(from_r5_0, &buffer) != ZIPC_OK) return 1;
     if (zipc_buffer_append(&buffer, "->R5_1", 6U) != ZIPC_OK) return 1;
     return zipc_send(to_linux, &buffer) == ZIPC_OK ? 0 : 1;
 }

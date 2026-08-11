@@ -71,7 +71,7 @@ static zipc_status_t open_posix(zipc_platform_memory_t *memory,
     memory->physical_base = ZIPC_PHYS_ADDR_INVALID;
     memory->capabilities = ZIPC_MEM_CAP_CPU_READ | ZIPC_MEM_CAP_CPU_WRITE |
                            ZIPC_MEM_CAP_ATOMIC32 | ZIPC_MEM_CAP_ATOMIC64 |
-                           ZIPC_MEM_CAP_CACHEABLE;
+                           ZIPC_MEM_CAP_CACHEABLE | ZIPC_MEM_CAP_PAGE_PROTECT;
     return ZIPC_OK;
 }
 
@@ -239,6 +239,59 @@ uint32_t zipc_platform_memory_capabilities(const zipc_platform_memory_t *memory)
 {
     return memory != NULL ? memory->capabilities : 0U;
 }
+
+size_t zipc_platform_page_size(void)
+{
+    const long page_size = sysconf(_SC_PAGESIZE);
+    return page_size > 0 ? (size_t)page_size : 0U;
+}
+
+size_t zipc_platform_memory_page_size(const zipc_platform_memory_t *memory)
+{
+    if (memory == NULL ||
+        (memory->capabilities & ZIPC_MEM_CAP_PAGE_PROTECT) == 0U)
+        return 0U;
+
+    return zipc_platform_page_size();
+}
+
+zipc_status_t zipc_platform_memory_protect_none(zipc_platform_memory_t *memory,
+                                               size_t offset,
+                                               size_t length)
+{
+    if (memory == NULL || length == 0U ||
+        (memory->capabilities & ZIPC_MEM_CAP_PAGE_PROTECT) == 0U)
+        return ZIPC_ERR_UNSUPPORTED_MEMORY;
+
+    const size_t page_size = zipc_platform_memory_page_size(memory);
+    if (page_size == 0U || (offset % page_size) != 0U ||
+        (length % page_size) != 0U || offset > memory->size ||
+        length > memory->size - offset)
+        return ZIPC_ERR_INVALID_ARGUMENT;
+
+    if (mprotect((uint8_t *)memory->base + offset, length, PROT_NONE) != 0)
+        return ZIPC_ERR_PLATFORM;
+
+    return ZIPC_OK;
+}
+
+zipc_status_t zipc_platform_memory_protect_rw(zipc_platform_memory_t *memory,
+                                             size_t offset,
+                                             size_t length)
+{
+    if (memory == NULL || length == 0U ||
+        (memory->capabilities & ZIPC_MEM_CAP_PAGE_PROTECT) == 0U)
+        return ZIPC_ERR_UNSUPPORTED_MEMORY;
+    const size_t page_size = zipc_platform_memory_page_size(memory);
+    if (page_size == 0U || (offset % page_size) != 0U ||
+        (length % page_size) != 0U || offset > memory->size ||
+        length > memory->size - offset)
+        return ZIPC_ERR_INVALID_ARGUMENT;
+    if (mprotect((uint8_t *)memory->base + offset, length, PROT_READ | PROT_WRITE) != 0)
+        return ZIPC_ERR_PLATFORM;
+    return ZIPC_OK;
+}
+
 
 
 typedef zipc_transport_spsc_ring_t zipc_linux_spsc_ring_t;

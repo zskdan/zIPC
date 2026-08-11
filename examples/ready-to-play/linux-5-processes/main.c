@@ -42,13 +42,13 @@ static void child_run(unsigned int index,
     char stage[32];
 
     if (index == 0U) {
-        CHECK_STATUS(zipc_buffer_get(links[0].sender, 64U, &buffer));
+        CHECK_STATUS(zipc_buffer_alloc_ex(links[0].sender, 0U, 64U, 0U, &buffer));
         CHECK_STATUS(zipc_buffer_append(&buffer, "P0", 2U));
         CHECK_STATUS(zipc_send(links[0].sender, &buffer));
         _exit(EXIT_SUCCESS);
     }
 
-    CHECK_STATUS(zipc_receive(links[index - 1U].receiver, &buffer));
+    CHECK_STATUS(zipc_recv(links[index - 1U].receiver, &buffer));
     const int count = snprintf(stage, sizeof(stage), "->P%u", index);
     if (count < 0 || (size_t)count >= sizeof(stage))
         _exit(EXIT_FAILURE);
@@ -58,11 +58,11 @@ static void child_run(unsigned int index,
         CHECK_STATUS(zipc_send(links[index].sender, &buffer));
     } else {
         printf("final: %.*s\n", (int)zipc_buffer_length(&buffer),
-               (const char *)zipc_buffer_const_data(&buffer));
+               (const char *)zipc_buffer_data(&buffer));
         printf("hop_count=%u distinct=%u\n",
-               buffer.control->hop_count,
-               (unsigned int)__builtin_popcountll(buffer.control->visited_mask));
-        CHECK_STATUS(zipc_buffer_put(links[index - 1U].receiver, &buffer));
+               zipc_buffer_hop_count(&buffer),
+               (unsigned int)__builtin_popcountll(zipc_buffer_visited_mask(&buffer)));
+        CHECK_STATUS(zipc_buffer_release(&buffer));
         fflush(stdout);
     }
     _exit(EXIT_SUCCESS);

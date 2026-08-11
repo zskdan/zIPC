@@ -147,6 +147,36 @@ uint32_t zipc_platform_memory_capabilities(const zipc_platform_memory_t *memory)
     return memory != NULL ? memory->capabilities : 0U;
 }
 
+size_t zipc_platform_page_size(void)
+{
+    return 0U;
+}
+
+size_t zipc_platform_memory_page_size(const zipc_platform_memory_t *memory)
+{
+    (void)memory;
+    return 0U;
+}
+
+zipc_status_t zipc_platform_memory_protect_none(zipc_platform_memory_t *memory,
+                                               size_t offset,
+                                               size_t length)
+{
+    (void)memory;
+    (void)offset;
+    (void)length;
+    return ZIPC_ERR_UNSUPPORTED_MEMORY;
+}
+
+zipc_status_t zipc_platform_memory_protect_rw(zipc_platform_memory_t *memory,
+                                             size_t offset,
+                                             size_t length)
+{
+    (void)memory; (void)offset; (void)length;
+    return ZIPC_ERR_UNSUPPORTED_MEMORY;
+}
+
+
 static zipc_status_t xen_bind_evtchn(zipc_platform_transport_t *transport,
                                     const zipc_platform_transport_config_t *cfg)
 {

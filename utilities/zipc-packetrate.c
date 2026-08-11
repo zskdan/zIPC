@@ -41,11 +41,11 @@ static uint64_t now_ns(void)
 static void buffer_get_wait(zipc_link_t *sender, zipc_buffer_t *buffer)
 {
     for (;;) {
-        const zipc_status_t status = zipc_buffer_get(sender, 0U, buffer);
+        const zipc_status_t status = zipc_buffer_alloc_ex(sender, 0U, 0U, 0U, buffer);
         if (status == ZIPC_OK)
             return;
         if (status != ZIPC_ERR_NO_BUFFER) {
-            fprintf(stderr, "zipc_buffer_get failed: %d\n", (int)status);
+            fprintf(stderr, "zipc_buffer_alloc_ex failed: %d\n", (int)status);
             exit(EXIT_FAILURE);
         }
         sched_yield();
@@ -203,16 +203,16 @@ int main(int argc, char **argv)
         close(done_pipe[0]);
         for (uint64_t i = 0U; i < WARMUP_PACKETS; ++i) {
             zipc_buffer_t buffer;
-            CHECK(zipc_receive(receiver, &buffer));
-            CHECK(zipc_buffer_put(receiver, &buffer));
+            CHECK(zipc_recv(receiver, &buffer));
+            CHECK(zipc_buffer_release(&buffer));
         }
         const uint8_t ready = 1U;
         if (write(ready_pipe[1], &ready, sizeof(ready)) != sizeof(ready))
             _exit(EXIT_FAILURE);
         for (uint64_t i = 0U; i < packet_count; ++i) {
             zipc_buffer_t buffer;
-            CHECK(zipc_receive(receiver, &buffer));
-            CHECK(zipc_buffer_put(receiver, &buffer));
+            CHECK(zipc_recv(receiver, &buffer));
+            CHECK(zipc_buffer_release(&buffer));
         }
         const uint8_t done = 1U;
         if (write(done_pipe[1], &done, sizeof(done)) != sizeof(done))

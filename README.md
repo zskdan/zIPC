@@ -1,4 +1,4 @@
-# zIPC v0.1.1
+# zIPC v0.1.19
 
 zIPC is an experimental chained zero-copy IPC protocol. A component allocates
 a fixed slot from a shared pool, processes the payload in place, and transfers
@@ -8,6 +8,24 @@ processing passes and `visited_mask` records distinct components.
 
 **Status:** resilience-focused prototype. v0.1 is not ABI-stable or production-ready.
 
+
+
+## Application API (v0.1.19)
+
+The normal application path is intentionally small:
+
+```c
+zipc_link_open(&link, "ab");
+zipc_buffer_alloc(link, size, &buffer);
+zipc_send(link, &buffer);        /* ownership transfer; buffer invalid afterward */
+zipc_recv(link, &buffer);
+zipc_buffer_release(&buffer);    /* buffer invalid afterward */
+```
+
+`zipc_buffer_t` is opaque and stack-allocatable. For an initial NNG migration,
+`zipc_send_copy()` and `zipc_recv_copy()` provide a simpler copy-oriented path.
+See [`docs/API.md`](docs/API.md), [`docs/NNG-MIGRATION.md`](docs/NNG-MIGRATION.md),
+and [`examples/shared-buffer-chain/`](examples/shared-buffer-chain/).
 
 ## What is new in v0.1
 
@@ -48,34 +66,49 @@ tests/                              Linux integration regression
 
 ## High-level API
 
-The low-level pool and platform APIs remain available. Applications can instead
-use directional links that bind a pool, local component, remote component, and
-transport:
+The low-level pool and platform APIs remain available for integration code.
+Normal applications use named directional links and opaque buffers:
 
 ```c
-zipc_link_create(&producer, &producer_cfg);
-zipc_link_create(&consumer, &consumer_cfg);
+zipc_link_open(&producer, "ab");
+zipc_buffer_alloc(producer, payload_size, &buffer);
+memcpy(zipc_buffer_data(&buffer), payload, payload_size);
+zipc_send(producer, &buffer);          /* consumes buffer */
 
-zipc_buffer_get(producer, 16U, &buffer);
-zipc_buffer_append(&buffer, payload, payload_size);
-zipc_send(producer, &buffer);
-
-zipc_receive(consumer, &buffer);
+zipc_link_open(&consumer, "ab");
+zipc_recv(consumer, &buffer);
 zipc_buffer_prepend(&buffer, header, header_size);
-zipc_buffer_put(consumer, &buffer);
-
-zipc_link_destroy(consumer);
-zipc_link_destroy(producer);
+zipc_buffer_release(&buffer);          /* consumes buffer */
 ```
 
-Main wrappers:
+Main application API:
 
-- `zipc_link_create()` / `zipc_link_destroy()`
-- `zipc_send()` / `zipc_receive()`
-- `zipc_buffer_get()` / `zipc_buffer_put()`
-- `zipc_buffer_append()` / `zipc_buffer_prepend()`
-- `zipc_buffer_trim_front()` / `zipc_buffer_trim_back()`
-- buffer data, length, headroom, and tailroom accessors
+- `zipc_link_open()` / `zipc_link_destroy()`
+- `zipc_buffer_alloc()` / `zipc_buffer_alloc_ex()`
+- `zipc_send()` / `zipc_recv()`
+- `zipc_buffer_release()`
+- `zipc_send_copy()` / `zipc_recv_copy()` for first-stage migration
+- `zipc_buffer_data()` / `zipc_buffer_size()`
+- `zipc_buffer_at()` for checked absolute fixed-offset access
+- `zipc_buffer_headroom()` / `zipc_buffer_tailroom()`
+- append/prepend/trim helpers
+
+`zipc_link_create()` and the platform/backend objects remain the expert API.
+Compatibility wrappers for the older v0.x names remain available.
+
+Fixed-layout components can access checked absolute offsets without exposing
+internal slot pointers:
+
+```c
+struct comp_b_fields *b =
+    zipc_buffer_at(&buffer, 0x40, sizeof(*b));
+if (b == NULL)
+    return ZIPC_ERR_REGION_OVERFLOW;
+```
+
+`zipc_buffer_at()` is relative to buffer offset zero, while
+`zipc_buffer_data()` follows the current logical data window. Front/back trims
+change only that logical window and do not move bytes.
 
 A link is directional: `local_component` is the owner on receive/allocation and
 `remote_component` is the peer on send. Bidirectional communication normally
@@ -91,7 +124,23 @@ uses two links or a bidirectional transport configured as two logical links.
 - `ZIPC_SHM_PREALLOCATED` — caller-owned static array, linker section, OCRAM/TCM, or BSP-provided memory
 
 `control_memory` must advertise CPU read/write and 32-bit atomic capability.
-`payload_memory` may be separate and does not need atomic support. This permits
+`payload_memory` may be separate and does not need atomic support.
+
+### Optional Linux guard pages
+
+A payload pool can set `ZIPC_POOL_F_GUARD_PAGES` to insert one `PROT_NONE`
+virtual-memory page after every page-aligned POSIX-SHM slot. A linear write past
+`slot_capacity` then faults before corrupting the next slot. Use
+`zipc_pool_guarded_slot_stride()` and `zipc_pool_guarded_payload_size()` to size
+the backing object. See `docs/GUARD_PAGES.md`. This is overflow detection, not
+per-slot ownership isolation: another valid slot remains mapped.
+`ZIPC_POOL_F_STRICT_OWNERSHIP` optionally revokes a slot mapping after
+ownership transfer on Linux page-protect-capable mappings; see
+`docs/OWNERSHIP.md`. It is disabled by default because of mprotect/TLB overhead.
+
+Topology configuration from static C/header data or an INI file is documented in `docs/TOPOLOGY.md`.
+
+This permits
 metadata in reserved DDR and slot payloads in PL BRAM.
 
 ## Transport backends

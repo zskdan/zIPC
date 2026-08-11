@@ -61,7 +61,7 @@ void zipc_r5_0_task(void *argument)
     };
     configASSERT(zipc_link_create(&from_linux, &rx_cfg) == ZIPC_OK);
     configASSERT(zipc_link_create(&to_r5_1, &tx_cfg) == ZIPC_OK);
-    configASSERT(zipc_receive(from_linux, &buffer) == ZIPC_OK);
+    configASSERT(zipc_recv(from_linux, &buffer) == ZIPC_OK);
     configASSERT(zipc_buffer_append(&buffer, "->R5_0", 6U) == ZIPC_OK);
     configASSERT(zipc_send(to_r5_1, &buffer) == ZIPC_OK);
     vTaskDelete(NULL);

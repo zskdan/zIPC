@@ -70,14 +70,14 @@ int main(void)
     CHECK(zipc_link_create(&rx, &rx_cfg) == ZIPC_OK);
 
     zipc_buffer_t buffer;
-    CHECK(zipc_buffer_get(tx, 16U, &buffer) == ZIPC_OK);
+    CHECK(zipc_buffer_alloc_ex(tx, 0U, 16U, 0U, &buffer) == ZIPC_OK);
     CHECK(zipc_buffer_append(&buffer, "freertos", 9U) == ZIPC_OK);
     CHECK(zipc_send(tx, &buffer) == ZIPC_OK);
-    CHECK(zipc_receive(rx, &buffer) == ZIPC_OK);
+    CHECK(zipc_recv(rx, &buffer) == ZIPC_OK);
     CHECK(zipc_buffer_length(&buffer) == 9U);
-    CHECK(memcmp(zipc_buffer_const_data(&buffer), "freertos", 9U) == 0);
-    CHECK(buffer.control->hop_count == 2U);
-    CHECK(zipc_buffer_put(rx, &buffer) == ZIPC_OK);
+    CHECK(memcmp(zipc_buffer_data(&buffer), "freertos", 9U) == 0);
+    CHECK(zipc_buffer_hop_count(&buffer) == 2U);
+    CHECK(zipc_buffer_release(&buffer) == ZIPC_OK);
 
     zipc_link_destroy(rx);
     zipc_link_destroy(tx);

@@ -39,8 +39,8 @@ int main(void)
         },
     };
     if (zipc_link_create(&link, &link_cfg) != ZIPC_OK) return 1;
-    if (zipc_receive(link, &buffer) != ZIPC_OK) return 1;
+    if (zipc_recv(link, &buffer) != ZIPC_OK) return 1;
     printf("final: %.*s\n", (int)zipc_buffer_length(&buffer),
-           (const char *)zipc_buffer_const_data(&buffer));
-    return zipc_buffer_put(link, &buffer) == ZIPC_OK ? 0 : 1;
+           (const char *)zipc_buffer_data(&buffer));
+    return zipc_buffer_release(&buffer) == ZIPC_OK ? 0 : 1;
 }

@@ -118,3 +118,33 @@ IPI hardware, interrupt latency, or the target memory map.
 ## Backend terminology
 
 Use the canonical three-role model: payload backend, descriptor backend, and event backend. See `docs/BACKENDS.md`.
+
+## Buffer ownership protection
+
+- The normal zIPC data path uses protocol/API ownership enforcement and does
+  not change virtual-memory permissions on every ownership transfer.
+- `zipc_send()` is expected to consume/invalidate the sender's local buffer
+  object on successful ownership transfer; accessors must reject invalid
+  buffer objects in the simplified public API.
+- Slot generation detects stale handles after slot reuse.
+- Guard pages are an optional pool property used to catch linear
+  overrun/underrun at slot boundaries; they do not enforce ownership between
+  otherwise valid slots.
+- Per-transfer MMU/MPU ownership enforcement is reserved for an optional
+  strict/debug protection mode. On Linux this may use per-slot `mprotect()`
+  (`RW` for the current owner and `PROT_NONE` for non-owners).
+- Strict protection must remain optional because page-permission and TLB
+  updates can materially increase transfer latency.
+- The strict ownership protection mode is a planned capability, not an
+  implemented v0.1.6 guarantee.
+
+
+## v0.1.7 application API and ownership
+
+- `zipc_buffer_t` is opaque; public code uses accessors only.
+- `zipc_send()` and `zipc_buffer_release()` consume and invalidate the local buffer object on success.
+- Pools are independent topology objects; links reference a pool but do not own pool lifetime.
+- A descriptor carries `pool_id` in addition to the slot handle.
+- Named link opening is backed by a process-local static topology registry; explicit `zipc_link_create()` remains the expert API.
+- Guard pages detect linear slot overrun. Strict ownership is a separate optional Linux protection mode that revokes non-owned slot mappings with `mprotect()`.
+- Copy helpers exist specifically to reduce first-stage NNG migration friction; zero-copy buffer ownership remains the preferred high-performance model.

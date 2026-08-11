@@ -62,7 +62,7 @@ static void run_component(unsigned int index,
     if (index == 0U) {
         for (unsigned int it = 0; it < iterations; ++it) {
             zipc_buffer_t buffer;
-            CHECK(zipc_buffer_get(forward[0].sender, 0U, &buffer));
+            CHECK(zipc_buffer_alloc_ex(forward[0].sender, 0U, 0U, 0U, &buffer));
             ping_payload_t payload;
             memset(&payload, 0, sizeof(payload));
             payload.sequence = it;
@@ -71,9 +71,9 @@ static void run_component(unsigned int index,
             CHECK(zipc_buffer_append(&buffer, &payload, sizeof(payload)));
             CHECK(zipc_send(forward[0].sender, &buffer));
 
-            CHECK(zipc_receive(reverse[0].receiver, &buffer));
+            CHECK(zipc_recv(reverse[0].receiver, &buffer));
             const uint64_t done = now_ns();
-            const ping_payload_t *reply = zipc_buffer_const_data(&buffer);
+            const ping_payload_t *reply = zipc_buffer_data(&buffer);
             const double rtt_us = (double)(done - reply->depart_ns[0]) / 1000.0;
             const double one_way_us =
                 (double)(reply->arrival_ns[component_count - 1U] -
@@ -86,9 +86,9 @@ static void run_component(unsigned int index,
                              reply->depart_ns[hop - 1U]) / 1000.0;
                 printf("%s%.3f", hop == 1U ? "" : ",", hop_us);
             }
-            printf(" us hop_count=%u\n", buffer.control->hop_count);
+            printf(" us hop_count=%u\n", zipc_buffer_hop_count(&buffer));
             fflush(stdout);
-            CHECK(zipc_buffer_put(reverse[0].receiver, &buffer));
+            CHECK(zipc_buffer_release(&buffer));
         }
         _exit(EXIT_SUCCESS);
     }
@@ -96,7 +96,7 @@ static void run_component(unsigned int index,
     const bool final_component = index + 1U == component_count;
     for (unsigned int it = 0; it < iterations; ++it) {
         zipc_buffer_t buffer;
-        CHECK(zipc_receive(forward[index - 1U].receiver, &buffer));
+        CHECK(zipc_recv(forward[index - 1U].receiver, &buffer));
         ping_payload_t *payload = zipc_buffer_data(&buffer);
         payload->arrival_ns[index] = now_ns();
         payload->depart_ns[index] = now_ns();
@@ -107,7 +107,7 @@ static void run_component(unsigned int index,
         }
 
         CHECK(zipc_send(forward[index].sender, &buffer));
-        CHECK(zipc_receive(reverse[index].receiver, &buffer));
+        CHECK(zipc_recv(reverse[index].receiver, &buffer));
         CHECK(zipc_send(reverse[index - 1U].sender, &buffer));
     }
     _exit(EXIT_SUCCESS);

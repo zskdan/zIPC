@@ -29,10 +29,10 @@ static void stage_task(void *argument)
     char suffix[16];
 
     if (index == 0U) {
-        check(zipc_buffer_get(g_tx[0], 32U, &buffer));
+        check(zipc_buffer_alloc_ex(g_tx[0], 0U, 32U, 0U, &buffer));
         check(zipc_buffer_append(&buffer, "T0", 2U));
     } else {
-        check(zipc_receive(g_rx[index - 1U], &buffer));
+        check(zipc_recv(g_rx[index - 1U], &buffer));
         const int n = snprintf(suffix, sizeof(suffix), "->T%lu",
                                (unsigned long)index);
         configASSERT(n > 0 && (size_t)n < sizeof(suffix));
@@ -43,8 +43,8 @@ static void stage_task(void *argument)
         check(zipc_send(g_tx[index], &buffer));
     } else {
         printf("final: %.*s\n", (int)zipc_buffer_length(&buffer),
-               (const char *)zipc_buffer_const_data(&buffer));
-        check(zipc_buffer_put(g_rx[index - 1U], &buffer));
+               (const char *)zipc_buffer_data(&buffer));
+        check(zipc_buffer_release(&buffer));
     }
 
     vTaskDelete(NULL);

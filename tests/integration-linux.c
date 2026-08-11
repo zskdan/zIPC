@@ -28,7 +28,7 @@ static void transfer(zipc_pool_t *pool,
 {
     zipc_message_t tx;
     zipc_message_t rx;
-    CHECK(zipc_buffer_prepare_transfer(pool, buffer->handle,
+    CHECK(zipc_buffer_prepare_transfer(pool, zipc_buffer_handle(buffer),
                                       source, destination, &tx));
     CHECK(zipc_platform_transport_send(link, &tx));
     CHECK(zipc_platform_transport_receive(link, &rx));
@@ -226,60 +226,38 @@ int main(void)
 
     zipc_buffer_t buffer;
     CHECK(zipc_buffer_allocate(&pool, COMP_A, &buffer));
-
-    memcpy(buffer.slot_base + 16U, "hello", 6U);
-    CHECK(zipc_buffer_set_region(&buffer, 16U, 6U));
+    CHECK(zipc_buffer_set_region(&buffer, 16U, 5U));
+    memcpy(zipc_buffer_data(&buffer), "hello", 5U);
 
     transfer(&pool, link_ab, COMP_A, COMP_B, &buffer);
-    strcat((char *)buffer.data, "-B");
-    CHECK(zipc_buffer_set_region(&buffer,
-                                buffer.control->region.offset,
-                                (uint32_t)strlen((char *)buffer.data) + 1U));
+    CHECK(zipc_buffer_append(&buffer, "-B", 2U));
 
     transfer(&pool, link_bc, COMP_B, COMP_C, &buffer);
-
-    /* C prepends without moving the existing data. */
-    {
-        static const char prefix[] = "C:";
-        const uint32_t prefix_len = (uint32_t)(sizeof(prefix) - 1U);
-        const uint32_t old_offset = buffer.control->region.offset;
-        const uint32_t old_length = buffer.control->region.length;
-        if (old_offset < prefix_len) {
-            fprintf(stderr, "insufficient headroom\n");
-            return EXIT_FAILURE;
-        }
-        memcpy(buffer.slot_base + old_offset - prefix_len,
-               prefix, prefix_len);
-        CHECK(zipc_buffer_set_region(&buffer,
-                                    old_offset - prefix_len,
-                                    old_length + prefix_len));
-    }
+    CHECK(zipc_buffer_prepend(&buffer, "C:", 2U));
 
     transfer(&pool, link_bc, COMP_C, COMP_B, &buffer); /* loop */
-    strcat((char *)buffer.data, "-B2");
-    CHECK(zipc_buffer_set_region(&buffer,
-                                buffer.control->region.offset,
-                                (uint32_t)strlen((char *)buffer.data) + 1U));
+    CHECK(zipc_buffer_append(&buffer, "-B2", 3U));
+    CHECK(zipc_buffer_append(&buffer, "\0", 1U));
 
     transfer(&pool, link_bd, COMP_B, COMP_D, &buffer);
 
-    printf("D consumed data='%s'\n", buffer.data);
+    printf("D consumed data='%s'\n", (char *)zipc_buffer_data(&buffer));
     printf("hop_count=%u distinct_components=%u visited_mask=0x%016llx\n",
-           buffer.control->hop_count,
-           (unsigned)__builtin_popcountll(buffer.control->visited_mask),
-           (unsigned long long)buffer.control->visited_mask);
+           zipc_buffer_hop_count(&buffer),
+           (unsigned)__builtin_popcountll(zipc_buffer_visited_mask(&buffer)),
+           (unsigned long long)zipc_buffer_visited_mask(&buffer));
     printf("control_caps=0x%08x payload_caps=0x%08x\n",
            zipc_platform_memory_capabilities(control_memory),
            zipc_platform_memory_capabilities(payload_memory));
 
-    if (strcmp((char *)buffer.data, "C:hello-B-B2") != 0 ||
-        buffer.control->hop_count != 5U ||
-        __builtin_popcountll(buffer.control->visited_mask) != 4) {
+    if (strcmp((char *)zipc_buffer_data(&buffer), "C:hello-B-B2") != 0 ||
+        zipc_buffer_hop_count(&buffer) != 5U ||
+        __builtin_popcountll(zipc_buffer_visited_mask(&buffer)) != 4) {
         fprintf(stderr, "validation failed\n");
         return EXIT_FAILURE;
     }
 
-    CHECK(zipc_buffer_release(&pool, buffer.handle, COMP_D));
+    CHECK(zipc_buffer_release(&buffer));
     puts("PASS: SMC/FF-A, PL ring/IRQ, split memory, FIFO, Unix socket, ring/eventfd, loop, prepend and append");
 
     zipc_platform_transport_close(link_bd);

@@ -61,13 +61,13 @@ int main(void)
     CHECK(zipc_link_create(&producer, &producer_cfg));
     CHECK(zipc_link_create(&consumer, &consumer_cfg));
 
-    CHECK(zipc_buffer_get(producer, 16U, &buffer));
+    CHECK(zipc_buffer_alloc_ex(producer, 0U, 16U, 0U, &buffer));
     CHECK(zipc_buffer_append(&buffer, "hello zIPC", sizeof("hello zIPC")));
     CHECK(zipc_send(producer, &buffer));
 
-    CHECK(zipc_receive(consumer, &buffer));
+    CHECK(zipc_recv(consumer, &buffer));
     printf("consumer received: %s\n", (char *)zipc_buffer_data(&buffer));
-    CHECK(zipc_buffer_put(consumer, &buffer));
+    CHECK(zipc_buffer_release(&buffer));
 
     zipc_link_destroy(consumer);
     zipc_link_destroy(producer);

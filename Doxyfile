@@ -1,0 +1,13 @@
+PROJECT_NAME           = "zIPC"
+PROJECT_NUMBER         = 0.1.9
+OUTPUT_DIRECTORY       = build/docs
+INPUT                  = include/zipc/zipc.h include/zipc/zipc-kernel.h docs
+RECURSIVE              = YES
+FILE_PATTERNS           = *.h *.md
+USE_MDFILE_AS_MAINPAGE = docs/API.md
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+EXTRACT_ALL            = YES
+JAVADOC_AUTOBRIEF      = YES
+QUIET                   = YES
+WARN_IF_UNDOCUMENTED   = NO

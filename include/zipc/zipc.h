@@ -45,7 +45,9 @@ typedef enum {
     ZIPC_ERR_HOP_LIMIT,
     ZIPC_ERR_DEADLINE,
     ZIPC_ERR_COMPONENT_STALE,
-    ZIPC_ERR_RECOVERY_REQUIRED
+    ZIPC_ERR_RECOVERY_REQUIRED,
+    ZIPC_ERR_INVALID_BUFFER,
+    ZIPC_ERR_BUFFER_TOO_SMALL
 } zipc_status_t;
 
 typedef enum {
@@ -152,7 +154,8 @@ typedef enum {
     ZIPC_MEM_CAP_CACHEABLE      = UINT32_C(1) << 4,
     ZIPC_MEM_CAP_FIXED_PHYS     = UINT32_C(1) << 5,
     ZIPC_MEM_CAP_REMOTE_ACCESS  = UINT32_C(1) << 6,
-    ZIPC_MEM_CAP_DEVICE_MEMORY  = UINT32_C(1) << 7
+    ZIPC_MEM_CAP_DEVICE_MEMORY  = UINT32_C(1) << 7,
+    ZIPC_MEM_CAP_PAGE_PROTECT   = UINT32_C(1) << 8
 } zipc_memory_capability_t;
 
 typedef struct {
@@ -216,6 +219,14 @@ void *zipc_platform_memory_base(const zipc_platform_memory_t *memory);
 size_t zipc_platform_memory_size(const zipc_platform_memory_t *memory);
 uint64_t zipc_platform_memory_physical_base(const zipc_platform_memory_t *memory);
 uint32_t zipc_platform_memory_capabilities(const zipc_platform_memory_t *memory);
+size_t zipc_platform_page_size(void);
+size_t zipc_platform_memory_page_size(const zipc_platform_memory_t *memory);
+zipc_status_t zipc_platform_memory_protect_none(zipc_platform_memory_t *memory,
+                                               size_t offset,
+                                               size_t length);
+zipc_status_t zipc_platform_memory_protect_rw(zipc_platform_memory_t *memory,
+                                             size_t offset,
+                                             size_t length);
 
 /* Platform-neutral object allocation used by the high-level API. */
 void *zipc_platform_alloc(size_t size);
@@ -223,6 +234,14 @@ void zipc_platform_free(void *pointer);
 uint64_t zipc_platform_time_ns(void);
 
 /* Pool API --------------------------------------------------------------- */
+
+typedef enum {
+    ZIPC_POOL_F_NONE        = 0U,
+    /* Put one inaccessible virtual-memory page after each payload slot. */
+    ZIPC_POOL_F_GUARD_PAGES      = UINT32_C(1) << 0,
+    /** Revoke payload pages when the local component does not own a slot. */
+    ZIPC_POOL_F_STRICT_OWNERSHIP = UINT32_C(1) << 1
+} zipc_pool_flag_t;
 
 typedef struct {
     /* Required. Must support CPU read/write and 32-bit atomics. */
@@ -237,6 +256,8 @@ typedef struct {
     uint32_t slot_capacity;
     uint32_t slot_stride;       /* 0 means align_up(slot_capacity, alignment). */
     uint32_t payload_alignment;
+    uint32_t flags;              /* zipc_pool_flag_t */
+    uint32_t pool_id;            /* Stable topology-local identity; 0 allowed. */
 } zipc_pool_config_t;
 
 typedef struct {
@@ -247,24 +268,28 @@ typedef struct {
     zipc_pool_header_t *header;
     zipc_slot_control_t *controls;
     uint8_t *payload_base;
+    uint32_t flags;
+    uint32_t pool_id;
 } zipc_pool_t;
 
 typedef struct {
     zipc_handle_t handle;
+    uint32_t pool_id;
     zipc_component_id_t source_component;
     zipc_component_id_t destination_component;
     uint32_t transfer_sequence;
     uint32_t flags;
 } zipc_message_t;
 
+/**
+ * @brief Application buffer object.
+ *
+ * The representation is intentionally opaque. Applications must use the
+ * zipc_buffer_* accessors and must not retain a data pointer after send or
+ * release. The fixed-size storage keeps stack allocation possible.
+ */
 typedef struct {
-    zipc_handle_t handle;
-    zipc_slot_id_t slot_id;
-    zipc_slot_control_t *control;
-    uint8_t *slot_base;
-    uint8_t *data;
-    uint32_t length;
-    uint32_t capacity;
+    uintptr_t _opaque[12];
 } zipc_buffer_t;
 
 size_t zipc_pool_required_control_size(uint32_t slot_count);
@@ -272,6 +297,9 @@ size_t zipc_pool_required_payload_size(uint32_t slot_count,
                                       uint32_t slot_capacity,
                                       uint32_t slot_stride,
                                       uint32_t payload_alignment);
+uint32_t zipc_pool_guarded_slot_stride(uint32_t slot_capacity);
+size_t zipc_pool_guarded_payload_size(uint32_t slot_count,
+                                     uint32_t slot_capacity);
 
 zipc_status_t zipc_pool_format(const zipc_pool_config_t *config);
 zipc_status_t zipc_pool_attach(zipc_pool_t *pool,
@@ -301,9 +329,9 @@ zipc_status_t zipc_buffer_claim(zipc_pool_t *pool,
                               zipc_component_id_t receiver,
                               zipc_buffer_t *buffer);
 
-zipc_status_t zipc_buffer_release(zipc_pool_t *pool,
-                                zipc_handle_t handle,
-                                zipc_component_id_t current_owner);
+zipc_status_t zipc_pool_buffer_release(zipc_pool_t *pool,
+                                     zipc_handle_t handle,
+                                     zipc_component_id_t current_owner);
 
 uint64_t zipc_buffer_payload_physical_address(const zipc_pool_t *pool,
                                              zipc_slot_id_t slot_id,
@@ -620,53 +648,248 @@ typedef struct {
     zipc_pool_t *pool;
     zipc_component_id_t local_component;
     zipc_component_id_t remote_component;
-    uint32_t local_epoch;       /* 0: use currently registered epoch. */
-    uint32_t hop_limit;         /* 0: unlimited. */
-    uint64_t default_deadline_ns; /* 0: no deadline. Relative duration. */
-    uint32_t timeout_ticks;     /* Backend-specific blocking timeout. */
+    uint32_t local_epoch;       /**< 0: use currently registered epoch. */
+    uint32_t hop_limit;         /**< 0: unlimited. */
+    uint64_t default_deadline_ns; /**< 0: no deadline; relative duration. */
+    uint32_t timeout_ticks;     /**< Backend-specific blocking timeout. */
     zipc_platform_transport_config_t transport;
 } zipc_link_config_t;
 
-/* Creates and owns one platform transport instance. */
+/** Legacy fully-resolved named link entry. Kept for v0.x compatibility. */
+typedef struct {
+    const char *name;
+    zipc_link_config_t config;
+} zipc_link_definition_t;
+
+#define ZIPC_TOPOLOGY_NAME_MAX 63U
+#define ZIPC_TOPOLOGY_MAX_LINKS 64U
+#define ZIPC_TOPOLOGY_MAX_POOLS 32U
+#define ZIPC_TOPOLOGY_MAX_TRANSPORTS 64U
+
+/** Duplicate handling used when loading or registering topology. */
+typedef enum {
+    ZIPC_TOPOLOGY_REJECT_DUPLICATES = 0,
+    ZIPC_TOPOLOGY_EXTEND,
+    ZIPC_TOPOLOGY_OVERRIDE
+} zipc_topology_policy_t;
+
+/**
+ * @brief Declarative link definition independent of runtime pointers.
+ *
+ * pool_name and transport_name are resolved against resources previously
+ * bound with zipc_topology_bind_pool() and zipc_topology_bind_transport().
+ * This same structure is used by compiled-in/header configuration and by the
+ * text-file parser.
+ */
+typedef struct {
+    const char *name;
+    uint64_t link_id;
+    const char *pool_name;
+    const char *transport_name;
+    zipc_component_id_t local_component;
+    zipc_component_id_t remote_component;
+    uint32_t local_epoch;
+    uint32_t hop_limit;
+    uint64_t default_deadline_ns;
+    uint32_t timeout_ticks;
+} zipc_topology_link_config_t;
+
+/** Canonical in-memory topology representation. */
+typedef struct {
+    const zipc_topology_link_config_t *links;
+    size_t link_count;
+} zipc_topology_config_t;
+
+/** Create a link from an explicit expert/platform configuration. */
 zipc_status_t zipc_link_create(zipc_link_t **link,
                                const zipc_link_config_t *config);
 void zipc_link_destroy(zipc_link_t *link);
 
-/* Allocate a slot owned by link->local_component with optional headroom. */
-zipc_status_t zipc_buffer_get(zipc_link_t *link,
-                              uint32_t headroom,
-                              zipc_buffer_t *buffer);
+/**
+ * @brief Register fully-resolved legacy named links.
+ * @deprecated Prefer zipc_topology_register_config().
+ */
+zipc_status_t zipc_topology_register(const zipc_link_definition_t *definitions,
+                                     size_t count);
 
-/* Transfer an owned buffer to link->remote_component. */
+/**
+ * @brief Bind a runtime pool object to a stable topology resource name.
+ * @param name Stable name referenced by declarative link entries.
+ * @param pool Attached runtime pool; it must outlive links opened from it.
+ * @return ZIPC_OK on success, otherwise an argument/capacity error.
+ */
+zipc_status_t zipc_topology_bind_pool(const char *name, zipc_pool_t *pool);
+/**
+ * @brief Bind a runtime transport configuration to a stable topology name.
+ * @param name Stable name referenced by declarative link entries.
+ * @param transport Platform transport configuration copied into the registry.
+ * @return ZIPC_OK on success, otherwise an argument/capacity error.
+ *
+ * Pointer-valued objects referenced by @p transport remain owned by the caller
+ * and must outlive links opened from this binding.
+ */
+zipc_status_t zipc_topology_bind_transport(
+    const char *name, const zipc_platform_transport_config_t *transport);
+
+/**
+ * @brief Validate declarative link syntax and resource references.
+ * @param config Canonical topology configuration.
+ * @return ZIPC_OK when valid; otherwise a validation error.
+ */
+zipc_status_t zipc_topology_validate(const zipc_topology_config_t *config);
+/**
+ * @brief Register topology supplied as static C/header data.
+ * @param config Canonical topology configuration.
+ * @param policy Explicit duplicate handling policy.
+ * @return ZIPC_OK on success; otherwise validation or registry error.
+ */
+zipc_status_t zipc_topology_register_config(
+    const zipc_topology_config_t *config, zipc_topology_policy_t policy);
+/**
+ * @brief Parse and register INI-style topology text already in memory.
+ * @param text Configuration bytes; no terminating NUL is required.
+ * @param length Number of bytes in @p text.
+ * @param policy Explicit duplicate handling policy.
+ * @return ZIPC_OK on success; otherwise parse, validation, or registry error.
+ */
+zipc_status_t zipc_topology_load_string(
+    const char *text, size_t length, zipc_topology_policy_t policy);
+/**
+ * @brief Parse and register an INI-style topology file.
+ * @param filename Path to the configuration file.
+ * @param policy Explicit duplicate handling policy.
+ * @return ZIPC_OK on success; otherwise file, parse, validation, or registry error.
+ *
+ * Implemented by hosted/Linux platform builds. Filesystem-less targets should
+ * use static configuration or zipc_topology_load_string().
+ */
+zipc_status_t zipc_topology_load_file(
+    const char *filename, zipc_topology_policy_t policy);
+/**
+ * @brief Clear process-local declarative topology entries and resource bindings.
+ *
+ * Intended for controlled initialization/teardown and tests. Existing opened
+ * links are not destroyed by this call.
+ */
+void zipc_topology_reset(void);
+
+/** Open a previously registered named link. */
+zipc_status_t zipc_link_open(zipc_link_t **link, const char *name);
+
+/**
+ * Allocate an owned buffer whose initial logical size is @p size.
+ * On success the caller owns the returned buffer until send or release.
+ */
+zipc_status_t zipc_buffer_alloc(zipc_link_t *link, size_t size,
+                                zipc_buffer_t *buffer);
+/** Allocate with explicit headroom and tailroom requirements. */
+zipc_status_t zipc_buffer_alloc_ex(zipc_link_t *link, size_t size,
+                                   size_t headroom, size_t tailroom,
+                                   zipc_buffer_t *buffer);
+
+/** Transfer ownership. On successful return @p buffer is invalidated. */
 zipc_status_t zipc_send(zipc_link_t *link, zipc_buffer_t *buffer);
 zipc_status_t zipc_send_timeout(zipc_link_t *link, zipc_buffer_t *buffer,
                                 uint32_t timeout_ticks);
 
-/* Receive and claim the next buffer for link->local_component. */
-zipc_status_t zipc_receive(zipc_link_t *link, zipc_buffer_t *buffer);
-zipc_status_t zipc_receive_timeout(zipc_link_t *link, zipc_buffer_t *buffer,
-                                   uint32_t timeout_ticks);
+/** Receive and claim ownership of the next buffer. */
+zipc_status_t zipc_recv(zipc_link_t *link, zipc_buffer_t *buffer);
+zipc_status_t zipc_recv_timeout(zipc_link_t *link, zipc_buffer_t *buffer,
+                                uint32_t timeout_ticks);
 
-/* Release an owned buffer back to the pool. */
-zipc_status_t zipc_buffer_put(zipc_link_t *link, zipc_buffer_t *buffer);
+/** Release an owned buffer. On success @p buffer is invalidated. */
+zipc_status_t zipc_buffer_release(zipc_buffer_t *buffer);
+
+/** Copy-oriented migration helpers. */
+zipc_status_t zipc_send_copy(zipc_link_t *link, const void *data, size_t size);
+zipc_status_t zipc_recv_copy(zipc_link_t *link, void *data, size_t capacity,
+                             size_t *actual_size);
+
 zipc_status_t zipc_buffer_set_limits(zipc_buffer_t *buffer,
                                      uint32_t hop_limit,
                                      uint64_t absolute_deadline_ns);
 
+/**
+ * @brief Append bytes to the logical end of an owned buffer.
+ *
+ * The operation copies @p length bytes from @p data into the current tailroom
+ * and grows the logical data window by the same amount. No reallocation occurs.
+ */
 zipc_status_t zipc_buffer_append(zipc_buffer_t *buffer,
-                                 const void *data,
-                                 uint32_t length);
+                                 const void *data, uint32_t length);
+/**
+ * @brief Prepend bytes to the logical beginning of an owned buffer.
+ *
+ * The operation copies @p length bytes into the current headroom and moves the
+ * logical data start backward. No reallocation occurs.
+ */
 zipc_status_t zipc_buffer_prepend(zipc_buffer_t *buffer,
-                                  const void *data,
-                                  uint32_t length);
+                                  const void *data, uint32_t length);
+/**
+ * @brief Remove bytes from the logical front without copying payload data.
+ *
+ * Advances the logical data start by @p length and decreases the logical size.
+ * The underlying bytes remain in the buffer storage and become headroom.
+ */
 zipc_status_t zipc_buffer_trim_front(zipc_buffer_t *buffer, uint32_t length);
+/**
+ * @brief Remove bytes from the logical back without copying payload data.
+ *
+ * Decreases the logical size by @p length. The removed bytes remain in the
+ * buffer storage and become tailroom.
+ */
 zipc_status_t zipc_buffer_trim_back(zipc_buffer_t *buffer, uint32_t length);
 
+/** Return the start of the current logical data window, or NULL if invalid. */
 void *zipc_buffer_data(zipc_buffer_t *buffer);
-const void *zipc_buffer_const_data(const zipc_buffer_t *buffer);
-uint32_t zipc_buffer_length(const zipc_buffer_t *buffer);
+/** Return the current logical data size, or zero for an invalid object. */
+size_t zipc_buffer_size(const zipc_buffer_t *buffer);
+/** Return bytes available before the current logical data window. */
 uint32_t zipc_buffer_headroom(const zipc_buffer_t *buffer);
+/** Return bytes available after the current logical data window. */
 uint32_t zipc_buffer_tailroom(const zipc_buffer_t *buffer);
+/**
+ * @brief Return an absolute writable range inside the owned buffer storage.
+ *
+ * @param buffer Owned buffer.
+ * @param offset Byte offset from the beginning of the complete buffer storage,
+ *        not from zipc_buffer_data().
+ * @param length Number of bytes that the caller intends to access.
+ * @return Pointer to the requested range, or NULL if the buffer is invalid or
+ *         the complete range [offset, offset + length) falls outside storage.
+ *
+ * This accessor is intended for fixed-layout chained processing, for example
+ * component A writing at offset 0x00, B at 0x40, and C at 0x80. It does not
+ * change the logical data window or logical size.
+ */
+void *zipc_buffer_at(zipc_buffer_t *buffer, size_t offset, size_t length);
+
+/** Test whether the local object currently represents owned storage. */
+bool zipc_buffer_is_valid(const zipc_buffer_t *buffer);
+
+/* Diagnostic accessors; applications should not inspect slot internals. */
+zipc_handle_t zipc_buffer_handle(const zipc_buffer_t *buffer);
+uint32_t zipc_buffer_pool_id(const zipc_buffer_t *buffer);
+uint32_t zipc_buffer_hop_count(const zipc_buffer_t *buffer);
+zipc_visited_mask_t zipc_buffer_visited_mask(const zipc_buffer_t *buffer);
+uint32_t zipc_buffer_owner_epoch(const zipc_buffer_t *buffer);
+zipc_slot_state_t zipc_buffer_slot_state(const zipc_buffer_t *buffer);
+uint32_t zipc_buffer_trace_copy(const zipc_buffer_t *buffer,
+                                zipc_trace_entry_t *entries,
+                                uint32_t capacity);
+
+/* Compatibility API retained during the v0.x migration.
+ * These functions are not part of the recommended application buffer API. */
+zipc_status_t zipc_buffer_resize(zipc_buffer_t *buffer, size_t size);
+const void *zipc_buffer_const_data(const zipc_buffer_t *buffer);
+size_t zipc_buffer_capacity(const zipc_buffer_t *buffer);
+zipc_status_t zipc_buffer_get(zipc_link_t *link, uint32_t headroom,
+                              zipc_buffer_t *buffer);
+zipc_status_t zipc_buffer_put(zipc_link_t *link, zipc_buffer_t *buffer);
+zipc_status_t zipc_receive(zipc_link_t *link, zipc_buffer_t *buffer);
+zipc_status_t zipc_receive_timeout(zipc_link_t *link, zipc_buffer_t *buffer,
+                                   uint32_t timeout_ticks);
+uint32_t zipc_buffer_length(const zipc_buffer_t *buffer);
 
 static inline zipc_handle_t zipc_handle_make(zipc_slot_id_t slot_id,
                                            zipc_generation_t generation)

@@ -33,21 +33,21 @@ int main(void)
 
     zipc_buffer_t buffer;
     CHECK(zipc_buffer_allocate(&pool, 1U, &buffer) == ZIPC_OK);
-    CHECK(buffer.control->owner_epoch == epoch);
+    CHECK(zipc_buffer_owner_epoch(&buffer) == epoch);
     CHECK(zipc_buffer_set_limits(&buffer, 1U, 0U) == ZIPC_OK);
     zipc_message_t message;
-    CHECK(zipc_buffer_prepare_transfer(&pool, buffer.handle, 1U, 2U, &message) == ZIPC_ERR_HOP_LIMIT);
+    CHECK(zipc_buffer_prepare_transfer(&pool, zipc_buffer_handle(&buffer), 1U, 2U, &message) == ZIPC_ERR_HOP_LIMIT);
 
     CHECK(zipc_buffer_set_limits(&buffer, 8U, 0U) == ZIPC_OK);
-    CHECK(zipc_buffer_prepare_transfer(&pool, buffer.handle, 1U, 2U, &message) == ZIPC_OK);
+    CHECK(zipc_buffer_prepare_transfer(&pool, zipc_buffer_handle(&buffer), 1U, 2U, &message) == ZIPC_OK);
     zipc_trace_entry_t trace[ZIPC_TRACE_DEPTH];
-    CHECK(zipc_slot_trace_copy(buffer.control, trace, ZIPC_TRACE_DEPTH) >= 2U);
+    CHECK(zipc_buffer_trace_copy(&buffer, trace, ZIPC_TRACE_DEPTH) >= 2U);
 
     CHECK(zipc_component_unregister(&pool, 1U, epoch) == ZIPC_OK);
     zipc_recovery_result_t recovered;
     CHECK(zipc_pool_recover_owner(&pool, 1U, epoch, 0U, &recovered) == ZIPC_OK);
     CHECK(recovered.recovered_transfer == 1U);
-    CHECK(atomic_load(&buffer.control->state) == ZIPC_SLOT_FREE);
+    CHECK(zipc_buffer_slot_state(&buffer) == ZIPC_SLOT_FREE);
 
     zipc_descriptor_backend_type_t descriptor;
     zipc_event_backend_type_t event;
