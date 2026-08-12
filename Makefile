@@ -21,7 +21,8 @@ EXAMPLE_BINS := build/examples/zipc-basic \
                 build/examples/zipc-shared-buffer-chain \
                 build/examples/zipc-ready-linux5
 TEST_BINS := build/tests/zipc-integration-linux build/tests/zipc-resilience-linux \
-             build/tests/zipc-guard-pages-linux build/tests/zipc-version-linux \
+             build/tests/zipc-guard-pages-linux build/tests/zipc-hardening-linux \
+             build/tests/zipc-version-linux \
              build/tests/zipc-api-simplified-linux \
              build/tests/zipc-topology-config-linux \
              build/tests/zipc-strict-ownership-linux \
@@ -70,6 +71,8 @@ build/tests/zipc-resilience-linux: $(ZIPC_LIB) tests/resilience-linux.c | build/
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
 build/tests/zipc-guard-pages-linux: $(ZIPC_LIB) tests/guard-pages-linux.c | build/tests
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
+build/tests/zipc-hardening-linux: $(ZIPC_LIB) tests/hardening-linux.c | build/tests
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
 build/tests/zipc-version-linux: $(ZIPC_LIB) tests/version-linux.c | build/tests
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
 build/tests/zipc-api-simplified-linux: $(ZIPC_LIB) tests/api-simplified-linux.c | build/tests
@@ -116,6 +119,7 @@ test: all
 	./build/tests/zipc-integration-linux
 	./build/tests/zipc-resilience-linux
 	./build/tests/zipc-guard-pages-linux
+	./build/tests/zipc-hardening-linux
 	./build/tests/zipc-version-linux
 	./build/tests/zipc-api-simplified-linux
 	./build/tests/zipc-topology-config-linux

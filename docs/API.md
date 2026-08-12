@@ -214,5 +214,17 @@ const char *version = zipc_version_string();
 ```
 
 `zipc_version_string()` always returns the immutable library version string,
-for example `"0.1.10"`. It is safe to call at any time and the returned pointer
+for example `"0.1.11"`. It is safe to call at any time and the returned pointer
 is valid for the lifetime of the library.
+
+## Timeout compatibility APIs
+
+ABI 1 transports expose only send and receive operations; they do not expose a
+per-call timed operation. Consequently `zipc_send_timeout()` and
+`zipc_recv_timeout()` retain their existing signatures but the
+`timeout_ticks` argument cannot override an opened transport. Blocking and
+timeout behavior comes from the transport configuration used at link creation,
+such as `poll_timeout_ns` for Linux shared-memory polling or transport
+`timeout_ticks` on FreeRTOS. A value accepted by the compatibility API is not a
+portable duration contract. Uniform per-call timeout semantics require the
+planned v0.2 transport contract and are not claimed by v0.1.11.

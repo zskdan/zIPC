@@ -12,8 +12,8 @@ extern "C" {
 
 #define ZIPC_VERSION_MAJOR        0U
 #define ZIPC_VERSION_MINOR        1U
-#define ZIPC_VERSION_PATCH        10U
-#define ZIPC_VERSION_STRING       "0.1.10"
+#define ZIPC_VERSION_PATCH        11U
+#define ZIPC_VERSION_STRING       "0.1.11"
 
 #define ZIPC_POOL_MAGIC             UINT32_C(0x5A495043)
 #define ZIPC_POOL_ABI_VERSION       UINT16_C(1)
@@ -67,7 +67,7 @@ typedef struct {
     uint32_t length;
 } zipc_buffer_region_t;
 
-/** Returns the immutable library version string, e.g. "0.1.10". */
+/** Returns the immutable library version string, e.g. "0.1.11". */
 const char *zipc_version_string(void);
 
 typedef enum {
@@ -252,7 +252,7 @@ typedef enum {
 } zipc_pool_flag_t;
 
 typedef struct {
-    /* Required. Must support CPU read/write and 32-bit atomics. */
+    /* ABI 1 requires CPU read/write plus 32-bit and 64-bit atomics. */
     zipc_platform_memory_t *control_memory;
     size_t control_offset;
 
@@ -797,13 +797,23 @@ zipc_status_t zipc_buffer_alloc_ex(zipc_link_t *link, size_t size,
 
 /** Transfer ownership. On successful return @p buffer is invalidated. */
 zipc_status_t zipc_send(zipc_link_t *link, zipc_buffer_t *buffer);
+/**
+ * Compatibility timed send. In ABI 1 the argument does not override the
+ * timeout fixed when the transport was opened; backend configuration remains
+ * authoritative.
+ */
 zipc_status_t zipc_send_timeout(zipc_link_t *link, zipc_buffer_t *buffer,
-                                uint32_t timeout_ticks);
+                                 uint32_t timeout_ticks);
 
 /** Receive and claim ownership of the next buffer. */
 zipc_status_t zipc_recv(zipc_link_t *link, zipc_buffer_t *buffer);
+/**
+ * Compatibility timed receive. In ABI 1 the argument does not override the
+ * timeout fixed when the transport was opened; backend configuration remains
+ * authoritative.
+ */
 zipc_status_t zipc_recv_timeout(zipc_link_t *link, zipc_buffer_t *buffer,
-                                uint32_t timeout_ticks);
+                                 uint32_t timeout_ticks);
 
 /** Release an owned buffer. On success @p buffer is invalidated. */
 zipc_status_t zipc_buffer_release(zipc_buffer_t *buffer);

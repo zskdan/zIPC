@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.1.11
+
+- Hardened pool geometry with overflow-safe alignment and size arithmetic,
+  control/payload address alignment checks, same-memory overlap rejection, and
+  exact ABI-1 `header_size`/`controls_offset` validation before attach derives
+  slot-control or payload pointers.
+- Corrected the ABI-1 control-memory contract to require CPU read/write plus
+  `ZIPC_MEM_CAP_ATOMIC32` and `ZIPC_MEM_CAP_ATOMIC64`; ABI 1 actively uses
+  shared `_Atomic uint64_t` fields.
+- Prevented component epoch zero on wrap, rejected exhausted epochs, rejected
+  recovery of a component's currently active exact epoch, and saturated
+  overflowing relative deadlines to `ZIPC_DEADLINE_NONE`.
+- Counted prepare/claim protocol failures and emitted per-slot
+  `ZIPC_TRACE_ERROR` only after ownership is validated; claim pre-validation
+  failures update the atomic counter without racing owner-protected trace data.
+- Released a newly claimed slot when strict-protection receive setup fails so
+  the failure does not silently leave an orphaned `OWNED` slot.
+- Documented that ABI-1 timeout compatibility calls use the timeout configured
+  when the backend is opened; their per-call argument cannot override it.
+- Added focused Linux hardening regression coverage without changing pool ABI 1,
+  public signatures, or public/shared structure layouts.
+
 ## v0.1.10
 
 - Added library version API: `ZIPC_VERSION_MAJOR`/`MINOR`/`PATCH`/`STRING`

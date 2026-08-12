@@ -1,4 +1,4 @@
-# zIPC v0.1.10
+# zIPC v0.1.11
 
 zIPC is an experimental chained zero-copy IPC protocol. A component allocates
 a fixed slot from a shared pool, processes the payload in place, and transfers
@@ -10,7 +10,7 @@ processing passes and `visited_mask` records distinct components.
 
 
 
-## Application API (v0.1.10)
+## Application API (v0.1.11)
 
 The normal application path is intentionally small:
 
@@ -123,7 +123,9 @@ uses two links or a bidirectional transport configured as two logical links.
 - `ZIPC_SHM_XEN_STATIC`
 - `ZIPC_SHM_PREALLOCATED` — caller-owned static array, linker section, OCRAM/TCM, or BSP-provided memory
 
-`control_memory` must advertise CPU read/write and 32-bit atomic capability.
+Pool ABI 1 `control_memory` must advertise CPU read/write plus 32-bit and
+64-bit atomic capability because its shared header and component table actively
+use both `_Atomic uint32_t` and `_Atomic uint64_t` fields.
 `payload_memory` may be separate and does not need atomic support.
 
 ### Optional Linux guard pages

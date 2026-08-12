@@ -52,6 +52,23 @@ Completed:
 - Correct `zipc-ping` timing units, validated intervals, bounded reply waits,
   and measured packet-loss summaries.
 
+## v0.1.11 — ABI-preserving hardening
+
+Completed:
+
+- Overflow-safe pool geometry, alignment, overlap, and attach metadata
+  validation while preserving pool ABI 1 and all public layouts/signatures.
+- Correct ABI-1 `ATOMIC32` plus `ATOMIC64` control-memory capability contract.
+- Epoch exhaustion, active-epoch recovery, deadline addition, protocol-error
+  observability, and strict receive-protection failure hardening.
+- Focused Linux regression coverage and synchronized release metadata.
+
+Documented limitations retained for v0.2:
+
+- ABI-1 timeout calls cannot override the timeout fixed in an opened backend.
+- Transport send failures do not distinguish unpublished from possibly
+  published descriptors, so ownership rollback remains ambiguous.
+
 ## Cross-version workstream: Observability & diagnostics
 
 NNG/RPMsg tracing is treated as zIPC requirements discovery, not throwaway
@@ -99,12 +116,11 @@ threads per socket, stack memory, scheduler latency. Target profile:
 
 ## Hardening backlog (pull into upcoming releases)
 
-- `zipc_recv_timeout()` currently ignores its timeout argument and blocks
-  (src/core/zipc.c); define tick units, enforce timeouts per transport.
-- Validate `payload_offset`/`payload_stride` geometry at pool format time
-  (control end vs payload start, stride vs capacity + alignment).
-- Make `zipc_recv_timeout`/`zipc_send_timeout` semantics uniform across
-  transports and document deadline behavior on `ZIPC_ERR_TIMEOUT`.
+- Define transport-independent duration units and native per-call timed
+  operations; ABI 1 currently uses backend-open configuration and cannot
+  honestly override it per call.
+- Add descriptor publication state so send failure can distinguish safe
+  rollback from published/ambiguous ownership transfer.
 - Harden `/dev/mem` based DT-reserved-memory mappings; production access must
   use a dedicated driver (v0.5 scope).
 - Extended soak/fault tests and sanitizer/static-analysis coverage (v0.9).

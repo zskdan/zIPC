@@ -5,7 +5,7 @@ These instructions apply to the complete repository unless a more specific
 
 ## Project status
 
-- Current release: **v0.1.10**.
+- Current release: **v0.1.11**.
 - The project is an experimental chained zero-copy IPC protocol.
 - The public API and shared-memory ABI are not stable before v1.0.
 - The next planned milestone is v0.2, but do not implement it unless explicitly requested.
@@ -74,7 +74,7 @@ For changes touching public structures or shared-memory layout, also inspect:
    release/acquire state transitions.
 5. `allocation_cursor` is only a relaxed atomic hint; slot claim is authoritative.
 6. Pool formatting, reset, and shutdown require external serialization.
-7. Control memory must support CPU read/write and 32-bit atomics.
+7. Pool ABI 1 control memory must support CPU read/write plus 32-bit and 64-bit atomics.
 8. Payload memory may be separate and need not support atomics.
 9. Never place control metadata in PL BRAM unless atomic semantics are proven.
 10. The local cookie is never transported or interpreted by zIPC.

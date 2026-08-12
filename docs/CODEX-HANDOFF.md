@@ -1,17 +1,17 @@
-# Codex handoff — zIPC v0.1.10
+# Codex handoff — zIPC v0.1.11
 
 ## Objective
 
-Continue development of zIPC from the supplied v0.1.10 repository. This file
+Continue development of zIPC from the supplied v0.1.11 repository. This file
 captures the design context and implementation expectations that were developed
 before the repository was handed to Codex.
 
 ## Current release
 
-- Version: `0.1.10`
+- Version: `0.1.11`
 - Pool ABI: `1`
 - Status: experimental prototype; public API and shared-memory ABI are not stable.
-- Immediate instruction: inspect and validate v0.1.10 before implementing v0.2.
+- Immediate instruction: inspect and validate v0.1.11 before implementing v0.2.
 
 Recommended first task:
 
@@ -85,7 +85,8 @@ Do not implement v0.2 until the review is complete.
 - The allocation cursor is a hint, not the allocation operation.
 - No pool-wide lock is required for normal fixed-slot operations.
 - Pool format/reset/shutdown requires external serialization.
-- Control memory must be atomic-capable.
+- Pool ABI 1 control memory must support CPU read/write plus 32-bit and 64-bit
+  atomics.
 - PL BRAM is payload-only unless atomics are proven.
 - Barriers do not replace cache maintenance.
 - Same high-level API should work across split-memory and platform backends.
@@ -94,7 +95,13 @@ Do not implement v0.2 until the review is complete.
 
 ## Known limitations
 
-- Timeout behavior is not yet uniform across transports.
+- Timeout behavior is not uniform across transports. ABI-1 timeout entry points
+  cannot override the timeout fixed when a backend is opened; the per-call
+  argument has no portable duration semantics.
+- A transport send failure does not report whether descriptor publication
+  occurred. The existing rollback is safe only for failures known by the
+  backend to be pre-publication; publication-state/acknowledgement is a v0.2
+  transport-contract blocker.
 - FreeRTOS task notification and basic IPI mailbox paths are depth one unless
   paired with a ring or queue.
 - Linux cached/uncached `/dev/mem` mappings are prototype behavior.
@@ -104,6 +111,21 @@ Do not implement v0.2 until the review is complete.
 - Link ID/cookie, correlation ID, QoS model, readiness handshake, and peer state
   APIs are planned, not implemented.
 - FreeRTOS and bare-metal integration tests do not replace target hardware runs.
+
+## v0.1.11 hardening findings
+
+- Pool ABI 1 actively uses `_Atomic uint64_t`; the previous ATOMIC32-only
+  requirement was incorrect and is now rejected/documented.
+- Pool format/attach now use checked alignment and size arithmetic, reject
+  same-object control/payload overlap, and validate exact header/control offsets
+  before deriving pointers.
+- Epoch wrap cannot produce zero; exhausted epochs return
+  `ZIPC_ERR_COMPONENT_STALE`, and recovery rejects an active exact epoch.
+- Relative deadline overflow saturates to `ZIPC_DEADLINE_NONE`.
+- Prepare/claim protocol failures increment `protocol_error_count`; slot error
+  traces are emitted only after ownership validation to avoid data races.
+- Strict receive-protection failure releases the newly claimed slot instead of
+  silently orphaning it in `OWNED` state.
 
 ## Agreed future concepts
 

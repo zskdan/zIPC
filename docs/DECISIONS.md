@@ -119,6 +119,16 @@ IPI hardware, interrupt latency, or the target memory map.
 
 Use the canonical three-role model: payload backend, descriptor backend, and event backend. See `docs/BACKENDS.md`.
 
+## D020 — ABI-1 descriptor publication rollback is transport-limited
+
+The v0.1 transport send API returns only success/failure and has no publication
+or cancellation state. The core may roll a slot from `TRANSFER` back to `OWNED`
+when send reports failure, but it cannot prove that a failing backend did not
+already publish the descriptor. Correcting this ambiguity requires a transport
+contract that distinguishes pre-publication failure from published/ambiguous
+failure (or provides acknowledgement/cancellation). It is a v0.2 blocker and
+must not be addressed by speculative ABI-1 ownership rollback changes.
+
 ## Buffer ownership protection
 
 - The normal zIPC data path uses protocol/API ownership enforcement and does

@@ -76,6 +76,16 @@ static void trace_slot(zipc_slot_control_t *slot,
     slot->trace_count++;
 }
 
+static void record_protocol_error(zipc_pool_t *pool,
+                                  zipc_slot_control_t *owned_slot,
+                                  zipc_component_id_t component)
+{
+    atomic_fetch_add_explicit(&pool->header->protocol_error_count, 1U,
+                              memory_order_relaxed);
+    if (owned_slot != NULL)
+        trace_slot(owned_slot, component, ZIPC_TRACE_ERROR);
+}
+
 static uint32_t registered_epoch(const zipc_pool_t *pool, zipc_component_id_t component)
 {
     if (pool == NULL || component >= ZIPC_MAX_COMPONENTS) return 0U;
@@ -111,9 +121,58 @@ static bool is_power_of_two(size_t value)
     return value != 0U && (value & (value - 1U)) == 0U;
 }
 
-static size_t align_up(size_t value, size_t alignment)
+static bool align_up_checked(size_t value, size_t alignment, size_t *result)
 {
-    return (value + alignment - 1U) & ~(alignment - 1U);
+    if (result == NULL || !is_power_of_two(alignment) ||
+        value > SIZE_MAX - (alignment - 1U))
+        return false;
+
+    *result = (value + alignment - 1U) & ~(alignment - 1U);
+    return true;
+}
+
+static bool memory_address_aligned(const zipc_platform_memory_t *memory,
+                                   size_t offset, size_t alignment)
+{
+    const uintptr_t base = (uintptr_t)zipc_platform_memory_base(memory);
+
+    return base != 0U && is_power_of_two(alignment) &&
+           offset <= UINTPTR_MAX - base &&
+           ((base + offset) & (alignment - 1U)) == 0U;
+}
+
+static bool memory_range_fits(const zipc_platform_memory_t *memory,
+                              size_t offset, size_t length)
+{
+    const size_t size = zipc_platform_memory_size(memory);
+    const uintptr_t base = (uintptr_t)zipc_platform_memory_base(memory);
+
+    return base != 0U && offset <= size && length <= size - offset &&
+           offset <= UINTPTR_MAX - base &&
+           length <= UINTPTR_MAX - (base + offset);
+}
+
+static bool pool_ranges_valid(const zipc_pool_config_t *config,
+                              const zipc_platform_memory_t *payload_memory,
+                              size_t control_required,
+                              size_t payload_required)
+{
+    if (!memory_range_fits(config->control_memory, config->control_offset,
+                           control_required) ||
+        !memory_range_fits(payload_memory, config->payload_offset,
+                           payload_required))
+        return false;
+
+    if (config->control_memory == payload_memory) {
+        const size_t control_end = config->control_offset + control_required;
+        const size_t payload_end = config->payload_offset + payload_required;
+
+        if (config->control_offset < payload_end &&
+            config->payload_offset < control_end)
+            return false;
+    }
+
+    return true;
 }
 
 static zipc_status_t normalize_config(const zipc_pool_config_t *config,
@@ -130,12 +189,23 @@ static zipc_status_t normalize_config(const zipc_pool_config_t *config,
                     ? config->payload_memory
                     : config->control_memory;
 
+    if ((config->control_offset % _Alignof(zipc_pool_header_t)) != 0U ||
+        !memory_address_aligned(config->control_memory,
+                                config->control_offset,
+                                _Alignof(zipc_pool_header_t)) ||
+        (config->payload_offset % config->payload_alignment) != 0U ||
+        !memory_address_aligned(*payload_memory, config->payload_offset,
+                                config->payload_alignment))
+        return ZIPC_ERR_INVALID_ARGUMENT;
+
     if ((config->flags & ZIPC_POOL_F_STRICT_OWNERSHIP) != 0U) {
         const size_t page_size = zipc_platform_memory_page_size(*payload_memory);
         const uint32_t payload_caps = zipc_platform_memory_capabilities(*payload_memory);
         if (page_size == 0U || page_size > UINT32_MAX ||
             (payload_caps & ZIPC_MEM_CAP_PAGE_PROTECT) == 0U ||
             (config->payload_offset % page_size) != 0U ||
+            !memory_address_aligned(*payload_memory, config->payload_offset,
+                                    page_size) ||
             ((size_t)config->slot_capacity % page_size) != 0U)
             return ZIPC_ERR_UNSUPPORTED_MEMORY;
     }
@@ -148,6 +218,8 @@ static zipc_status_t normalize_config(const zipc_pool_config_t *config,
         if (page_size == 0U || page_size > UINT32_MAX ||
             (payload_caps & ZIPC_MEM_CAP_PAGE_PROTECT) == 0U ||
             (config->payload_offset % page_size) != 0U ||
+            !memory_address_aligned(*payload_memory, config->payload_offset,
+                                    page_size) ||
             ((size_t)config->slot_capacity % page_size) != 0U ||
             config->slot_capacity > UINT32_MAX - (uint32_t)page_size)
             return ZIPC_ERR_UNSUPPORTED_MEMORY;
@@ -159,10 +231,17 @@ static zipc_status_t normalize_config(const zipc_pool_config_t *config,
             return ZIPC_ERR_INVALID_ARGUMENT;
         *slot_stride = guarded_stride;
     } else {
-        *slot_stride = config->slot_stride != 0U
-                     ? config->slot_stride
-                     : (uint32_t)align_up(config->slot_capacity,
-                                          config->payload_alignment);
+        if (config->slot_stride != 0U) {
+            *slot_stride = config->slot_stride;
+        } else {
+            size_t aligned_capacity = 0U;
+            if (!align_up_checked(config->slot_capacity,
+                                  config->payload_alignment,
+                                  &aligned_capacity) ||
+                aligned_capacity > UINT32_MAX)
+                return ZIPC_ERR_INVALID_ARGUMENT;
+            *slot_stride = (uint32_t)aligned_capacity;
+        }
     }
 
     if (*slot_stride < config->slot_capacity ||
@@ -172,9 +251,9 @@ static zipc_status_t normalize_config(const zipc_pool_config_t *config,
     const uint32_t control_caps =
         zipc_platform_memory_capabilities(config->control_memory);
     if ((control_caps & (ZIPC_MEM_CAP_CPU_READ | ZIPC_MEM_CAP_CPU_WRITE |
-                         ZIPC_MEM_CAP_ATOMIC32)) !=
+                          ZIPC_MEM_CAP_ATOMIC32 | ZIPC_MEM_CAP_ATOMIC64)) !=
         (ZIPC_MEM_CAP_CPU_READ | ZIPC_MEM_CAP_CPU_WRITE |
-         ZIPC_MEM_CAP_ATOMIC32))
+         ZIPC_MEM_CAP_ATOMIC32 | ZIPC_MEM_CAP_ATOMIC64))
         return ZIPC_ERR_UNSUPPORTED_MEMORY;
 
     const uint32_t payload_caps =
@@ -214,8 +293,10 @@ size_t zipc_pool_required_control_size(uint32_t slot_count)
     if (slot_count == 0U)
         return 0U;
 
-    const size_t controls_offset =
-        align_up(sizeof(zipc_pool_header_t), _Alignof(zipc_slot_control_t));
+    size_t controls_offset = 0U;
+    if (!align_up_checked(sizeof(zipc_pool_header_t),
+                          _Alignof(zipc_slot_control_t), &controls_offset))
+        return 0U;
     if ((size_t)slot_count > (SIZE_MAX - controls_offset) /
                              sizeof(zipc_slot_control_t))
         return 0U;
@@ -253,9 +334,15 @@ size_t zipc_pool_required_payload_size(uint32_t slot_count,
         !is_power_of_two(payload_alignment))
         return 0U;
 
-    uint32_t stride = slot_stride != 0U
-                    ? slot_stride
-                    : (uint32_t)align_up(slot_capacity, payload_alignment);
+    size_t aligned_capacity = 0U;
+    if (slot_stride == 0U &&
+        (!align_up_checked(slot_capacity, payload_alignment,
+                           &aligned_capacity) ||
+         aligned_capacity > UINT32_MAX))
+        return 0U;
+
+    const uint32_t stride = slot_stride != 0U
+                          ? slot_stride : (uint32_t)aligned_capacity;
     if (stride < slot_capacity || (stride % payload_alignment) != 0U ||
         (size_t)slot_count > SIZE_MAX / stride)
         return 0U;
@@ -279,12 +366,8 @@ zipc_status_t zipc_pool_format(const zipc_pool_config_t *config)
                                        slot_stride,
                                        config->payload_alignment);
     if (control_required == 0U || payload_required == 0U ||
-        config->control_offset > zipc_platform_memory_size(config->control_memory) ||
-        control_required > zipc_platform_memory_size(config->control_memory) -
-                           config->control_offset ||
-        config->payload_offset > zipc_platform_memory_size(payload_memory) ||
-        payload_required > zipc_platform_memory_size(payload_memory) -
-                           config->payload_offset)
+        !pool_ranges_valid(config, payload_memory, control_required,
+                           payload_required))
         return ZIPC_ERR_INVALID_ARGUMENT;
 
     status = apply_guard_pages(config, payload_memory, slot_stride);
@@ -303,8 +386,15 @@ zipc_status_t zipc_pool_format(const zipc_pool_config_t *config)
     header->slot_count = config->slot_count;
     header->slot_capacity = config->slot_capacity;
     header->slot_stride = slot_stride;
-    header->controls_offset = (uint32_t)align_up(sizeof(*header),
-                                                 _Alignof(zipc_slot_control_t));
+    size_t controls_offset = 0U;
+    if (!align_up_checked(sizeof(*header), _Alignof(zipc_slot_control_t),
+                          &controls_offset) || controls_offset > UINT32_MAX ||
+        config->control_offset > SIZE_MAX - controls_offset ||
+        !memory_address_aligned(config->control_memory,
+                                config->control_offset + controls_offset,
+                                _Alignof(zipc_slot_control_t)))
+        return ZIPC_ERR_INVALID_ARGUMENT;
+    header->controls_offset = (uint32_t)controls_offset;
     header->payload_alignment = config->payload_alignment;
 
     zipc_slot_control_t *controls = (zipc_slot_control_t *)(
@@ -356,10 +446,24 @@ zipc_status_t zipc_pool_attach(zipc_pool_t *pool,
 
     if (header->magic != ZIPC_POOL_MAGIC ||
         header->abi_version != ZIPC_POOL_ABI_VERSION ||
+        header->header_size != sizeof(*header) ||
         header->slot_count != config->slot_count ||
         header->slot_capacity != config->slot_capacity ||
         header->slot_stride != requested_stride ||
         header->payload_alignment != config->payload_alignment)
+        return ZIPC_ERR_INVALID_POOL;
+
+    size_t expected_controls_offset = 0U;
+    if (!align_up_checked(sizeof(*header), _Alignof(zipc_slot_control_t),
+                          &expected_controls_offset) ||
+        expected_controls_offset > UINT32_MAX ||
+        header->controls_offset != expected_controls_offset ||
+        (header->controls_offset % _Alignof(zipc_slot_control_t)) != 0U ||
+        config->control_offset > SIZE_MAX - header->controls_offset ||
+        !memory_address_aligned(
+            config->control_memory,
+            config->control_offset + header->controls_offset,
+            _Alignof(zipc_slot_control_t)))
         return ZIPC_ERR_INVALID_POOL;
 
     const size_t control_required =
@@ -370,11 +474,12 @@ zipc_status_t zipc_pool_attach(zipc_pool_t *pool,
                                        header->slot_stride,
                                        header->payload_alignment);
     if (control_required == 0U || payload_required == 0U ||
-        control_required > zipc_platform_memory_size(config->control_memory) -
-                           config->control_offset ||
-        config->payload_offset > zipc_platform_memory_size(payload_memory) ||
-        payload_required > zipc_platform_memory_size(payload_memory) -
-                           config->payload_offset)
+        header->controls_offset > control_required ||
+        (size_t)header->slot_count >
+            (control_required - header->controls_offset) /
+            sizeof(zipc_slot_control_t) ||
+        !pool_ranges_valid(config, payload_memory, control_required,
+                           payload_required))
         return ZIPC_ERR_INVALID_POOL;
 
     memset(pool, 0, sizeof(*pool));
@@ -547,22 +652,35 @@ zipc_status_t zipc_buffer_prepare_transfer(zipc_pool_t *pool,
         return ZIPC_ERR_INVALID_ARGUMENT;
 
     const zipc_slot_id_t slot_id = zipc_handle_slot_id(handle);
-    if (slot_id >= pool->header->slot_count)
+    if (slot_id >= pool->header->slot_count) {
+        record_protocol_error(pool, NULL, current_owner);
         return ZIPC_ERR_INVALID_HANDLE;
+    }
 
     zipc_slot_control_t *slot = &pool->controls[slot_id];
-    if (slot->generation != zipc_handle_generation(handle))
+    if (slot->generation != zipc_handle_generation(handle)) {
+        record_protocol_error(pool, NULL, current_owner);
         return ZIPC_ERR_STALE_HANDLE;
+    }
     if (atomic_load_explicit(&slot->state, memory_order_relaxed) !=
-        ZIPC_SLOT_OWNED)
+        ZIPC_SLOT_OWNED) {
+        record_protocol_error(pool, NULL, current_owner);
         return ZIPC_ERR_INVALID_STATE;
-    if (slot->owner_id != current_owner)
+    }
+    if (slot->owner_id != current_owner) {
+        record_protocol_error(pool, NULL, current_owner);
         return ZIPC_ERR_NOT_OWNER;
+    }
     const uint64_t now_ns = zipc_now_ns();
-    if (slot->deadline_ns != ZIPC_DEADLINE_NONE && now_ns > slot->deadline_ns)
+    if (slot->deadline_ns != ZIPC_DEADLINE_NONE && now_ns > slot->deadline_ns) {
+        record_protocol_error(pool, slot, current_owner);
         return ZIPC_ERR_DEADLINE;
-    if (slot->hop_limit != ZIPC_HOP_LIMIT_UNLIMITED && slot->hop_count >= slot->hop_limit)
+    }
+    if (slot->hop_limit != ZIPC_HOP_LIMIT_UNLIMITED &&
+        slot->hop_count >= slot->hop_limit) {
+        record_protocol_error(pool, slot, current_owner);
         return ZIPC_ERR_HOP_LIMIT;
+    }
 
     slot->next_owner_id = next_owner;
     slot->transfer_sequence++;
@@ -588,34 +706,58 @@ zipc_status_t zipc_buffer_claim(zipc_pool_t *pool,
     if (pool == NULL || message == NULL || buffer == NULL ||
         receiver >= ZIPC_MAX_COMPONENTS)
         return ZIPC_ERR_INVALID_ARGUMENT;
-    if (message->pool_id != pool->pool_id)
+    if (message->pool_id != pool->pool_id) {
+        record_protocol_error(pool, NULL, receiver);
         return ZIPC_ERR_INVALID_HANDLE;
-    if (message->destination_component != receiver)
+    }
+    if (message->destination_component != receiver) {
+        record_protocol_error(pool, NULL, receiver);
         return ZIPC_ERR_INVALID_RECEIVER;
+    }
 
     const zipc_slot_id_t slot_id = zipc_handle_slot_id(message->handle);
-    if (slot_id >= pool->header->slot_count)
+    if (slot_id >= pool->header->slot_count) {
+        record_protocol_error(pool, NULL, receiver);
         return ZIPC_ERR_INVALID_HANDLE;
+    }
 
     zipc_slot_control_t *slot = &pool->controls[slot_id];
-    if (slot->generation != zipc_handle_generation(message->handle))
+    if (atomic_load_explicit(&slot->state, memory_order_acquire) !=
+        ZIPC_SLOT_TRANSFER) {
+        record_protocol_error(pool, NULL, receiver);
+        return ZIPC_ERR_INVALID_STATE;
+    }
+    if (slot->generation != zipc_handle_generation(message->handle)) {
+        record_protocol_error(pool, NULL, receiver);
         return ZIPC_ERR_STALE_HANDLE;
+    }
     if (slot->owner_id != message->source_component ||
-        slot->next_owner_id != receiver)
+        slot->next_owner_id != receiver) {
+        record_protocol_error(pool, NULL, receiver);
         return ZIPC_ERR_INVALID_RECEIVER;
-    if (slot->transfer_sequence != message->transfer_sequence)
+    }
+    if (slot->transfer_sequence != message->transfer_sequence) {
+        record_protocol_error(pool, NULL, receiver);
         return ZIPC_ERR_SEQUENCE_MISMATCH;
+    }
     const uint64_t now_ns = zipc_now_ns();
-    if (slot->deadline_ns != ZIPC_DEADLINE_NONE && now_ns > slot->deadline_ns)
+    if (slot->deadline_ns != ZIPC_DEADLINE_NONE && now_ns > slot->deadline_ns) {
+        record_protocol_error(pool, NULL, receiver);
         return ZIPC_ERR_DEADLINE;
-    if (slot->hop_limit != ZIPC_HOP_LIMIT_UNLIMITED && slot->hop_count >= slot->hop_limit)
+    }
+    if (slot->hop_limit != ZIPC_HOP_LIMIT_UNLIMITED &&
+        slot->hop_count >= slot->hop_limit) {
+        record_protocol_error(pool, NULL, receiver);
         return ZIPC_ERR_HOP_LIMIT;
+    }
 
     uint32_t expected = ZIPC_SLOT_TRANSFER;
     if (!atomic_compare_exchange_strong_explicit(
             &slot->state, &expected, ZIPC_SLOT_OWNED,
-            memory_order_acquire, memory_order_relaxed))
+            memory_order_acquire, memory_order_relaxed)) {
+        record_protocol_error(pool, NULL, receiver);
         return ZIPC_ERR_INVALID_STATE;
+    }
 
     slot->owner_id = receiver;
     slot->next_owner_id = ZIPC_INVALID_COMPONENT_ID;
@@ -624,7 +766,12 @@ zipc_status_t zipc_buffer_claim(zipc_pool_t *pool,
     slot->visited_mask |= UINT64_C(1) << receiver;
     slot->acquired_ns = now_ns;
     trace_slot(slot, receiver, ZIPC_TRACE_RECEIVE);
-    return make_view(pool, slot_id, message->handle, buffer);
+    zipc_status_t status = make_view(pool, slot_id, message->handle, buffer);
+    if (status != ZIPC_OK) {
+        record_protocol_error(pool, slot, receiver);
+        (void)zipc_pool_buffer_release(pool, message->handle, receiver);
+    }
+    return status;
 }
 
 zipc_status_t zipc_pool_buffer_release(zipc_pool_t *pool,
@@ -682,7 +829,16 @@ zipc_status_t zipc_component_register(zipc_pool_t *pool, zipc_component_id_t com
 {
     if (pool == NULL || component >= ZIPC_MAX_COMPONENTS) return ZIPC_ERR_INVALID_ARGUMENT;
     zipc_component_status_t *entry = &pool->header->components[component];
-    const uint32_t epoch = atomic_fetch_add_explicit(&entry->epoch, 1U, memory_order_acq_rel) + 1U;
+    uint32_t current = atomic_load_explicit(&entry->epoch, memory_order_acquire);
+    for (;;) {
+        if (current == UINT32_MAX)
+            return ZIPC_ERR_COMPONENT_STALE;
+        if (atomic_compare_exchange_weak_explicit(
+                &entry->epoch, &current, current + 1U,
+                memory_order_acq_rel, memory_order_acquire))
+            break;
+    }
+    const uint32_t epoch = current + 1U;
     atomic_store_explicit(&entry->last_heartbeat_ns, zipc_now_ns(), memory_order_release);
     atomic_store_explicit(&entry->active, 1U, memory_order_release);
     if (epoch_out != NULL) *epoch_out = epoch;
@@ -728,6 +884,10 @@ zipc_status_t zipc_pool_recover_owner(zipc_pool_t *pool, zipc_component_id_t com
                                       zipc_recovery_result_t *result)
 {
     if (pool == NULL || component >= ZIPC_MAX_COMPONENTS || dead_epoch == 0U) return ZIPC_ERR_INVALID_ARGUMENT;
+    const zipc_component_status_t *entry = &pool->header->components[component];
+    if (atomic_load_explicit(&entry->active, memory_order_acquire) != 0U &&
+        atomic_load_explicit(&entry->epoch, memory_order_acquire) == dead_epoch)
+        return ZIPC_ERR_COMPONENT_STALE;
     zipc_recovery_result_t local = {0};
     const uint64_t now = zipc_now_ns();
     for (uint32_t i = 0; i < pool->header->slot_count; ++i) {
@@ -1178,8 +1338,11 @@ static void apply_link_limits(zipc_link_t *link, zipc_buffer_t *buffer)
 {
     BI(buffer)->control->owner_epoch = link->local_epoch;
     BI(buffer)->control->hop_limit = link->hop_limit;
-    BI(buffer)->control->deadline_ns = link->default_deadline_ns != 0U
-        ? zipc_now_ns() + link->default_deadline_ns : ZIPC_DEADLINE_NONE;
+    const uint64_t now_ns = zipc_now_ns();
+    BI(buffer)->control->deadline_ns =
+        link->default_deadline_ns == 0U ||
+        link->default_deadline_ns >= ZIPC_DEADLINE_NONE - now_ns
+        ? ZIPC_DEADLINE_NONE : now_ns + link->default_deadline_ns;
     BI(buffer)->owner = link->local_component;
 }
 
@@ -1293,14 +1456,18 @@ zipc_status_t zipc_recv(zipc_link_t *link, zipc_buffer_t *buffer)
     zipc_status_t status = zipc_platform_transport_receive(link->transport,
                                                            &message);
     if (status != ZIPC_OK) return status;
-    if (message.source_component != link->remote_component)
+    if (message.source_component != link->remote_component) {
+        record_protocol_error(link->pool, NULL, link->local_component);
         return ZIPC_ERR_INVALID_RECEIVER;
+    }
     status = zipc_buffer_claim(link->pool, &message,
                                link->local_component, buffer);
     if (status != ZIPC_OK) return status;
     BI(buffer)->owner = link->local_component;
     status = protect_slot(link->pool, BI(buffer)->slot_id, true);
     if (status != ZIPC_OK) {
+        (void)zipc_pool_buffer_release(link->pool, BI(buffer)->handle,
+                                       link->local_component);
         buffer_invalidate(buffer);
         return status;
     }
@@ -1532,4 +1699,3 @@ uint32_t zipc_buffer_trace_copy(const zipc_buffer_t *buffer,
     return buffer_valid(buffer)
          ? zipc_slot_trace_copy(BIC(buffer)->control, entries, capacity) : 0U;
 }
-

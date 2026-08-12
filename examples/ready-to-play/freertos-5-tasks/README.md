@@ -155,7 +155,9 @@ static const zipc_platform_memory_config_t memory_cfg = {
 
 For tasks on one R5 core, cache maintenance is normally unnecessary because they share one cache and address space. For R5_0/R5_1, A53/R5, or PS/PL sharing, both sides must map the same physical OCRAM range consistently. Cacheability, shareability, MPU attributes, and atomic support must be verified for the selected SoC configuration.
 
-Do not mark ordinary shared metadata as Device memory merely because another processor can access it. The zIPC control region must support normal CPU reads/writes and 32-bit atomic operations.
+Do not mark ordinary shared metadata as Device memory merely because another
+processor can access it. Pool ABI 1 control memory must support normal CPU
+reads/writes plus 32-bit and 64-bit atomic operations.
 
 ## Existing reserved-DDR example
 

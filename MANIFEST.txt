@@ -53,6 +53,7 @@ src/core/zipc-backends.c
 src/core/zipc.c
 tests/api-simplified-linux.c
 tests/guard-pages-linux.c
+tests/hardening-linux.c
 tests/integration-baremetal.c
 tests/integration-freertos.c
 tests/integration-linux.c

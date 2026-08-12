@@ -115,6 +115,8 @@ Control-memory requirements:
 - CPU readable;
 - CPU writable;
 - 32-bit atomic operations;
+- 64-bit atomic operations, because pool ABI 1 actively uses shared
+  `_Atomic uint64_t` counters and component lifecycle fields;
 - correct sharing and ordering attributes for all participants.
 
 Payload memory may reside in DDR, huge pages, Xen static memory, or PL BRAM.
@@ -152,7 +154,7 @@ specific implementation states otherwise.
 
 ## Current execution and planned model
 
-In v0.1.10, zIPC calls execute in the caller context and the core creates no
+In v0.1.11, zIPC calls execute in the caller context and the core creates no
 threads. Depending on the selected backend, a send or receive may block or poll
 inside that call. There is currently no public asynchronous, service-loop, or
 reactor API.
@@ -218,10 +220,16 @@ A representative acceptance profile:
 
 ## Observability by design
 
-The current v0.1.10 implementation records fixed-depth per-slot entries for
+The current v0.1.11 implementation records fixed-depth per-slot entries for
 allocation, send, receive, release, recovery, and error transitions. Each
 entry contains a timestamp, transfer sequence, component ID, and event type;
 `zipc-stat` exposes those entries.
+
+Protocol failures in transfer preparation and claim increment the pool's atomic
+`protocol_error_count`. A `ZIPC_TRACE_ERROR` entry is written only when the
+caller has already been validated as the current owner. Claim failures before
+the ownership state transition deliberately do not write owner-protected slot
+trace fields, because doing so could race the legitimate owner/receiver.
 
 Future versions will add an optional fixed-format native trace contract rather
 than requiring later reverse engineering. The planned event carries identity
