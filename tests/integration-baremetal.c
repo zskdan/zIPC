@@ -77,7 +77,7 @@ int main(void)
     CHECK(zipc_link_create(&rx, &rx_cfg) == ZIPC_OK);
 
     zipc_buffer_t buffer;
-    CHECK(zipc_buffer_alloc_ex(tx, 0U, 8U, 0U, &buffer) == ZIPC_OK);
+    CHECK(zipc_buffer_alloc_ex(tx, 0U, 8U, 0U, &buffer, NULL) == ZIPC_OK);
     CHECK(zipc_buffer_append(&buffer, "baremetal", 10U) == ZIPC_OK);
     CHECK(zipc_send(tx, &buffer) == ZIPC_OK);
     CHECK(zipc_recv(rx, &buffer) == ZIPC_OK);

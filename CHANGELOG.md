@@ -1,5 +1,72 @@
 # Changelog
 
+## v0.2.0
+
+- Added immutable 64-bit buffer IDs and parent lineage to pool ABI 2 slot
+  control metadata without expanding `zipc_message_t` descriptors.
+- Added the packed allocator/session/sequence identity layout, one lazy
+  process-global generator per component ID, 32-bit-atomic rollover, explicit
+  entropy failure, and secure platform entropy adapters.
+- Changed allocation APIs to accept an optional parent buffer; root allocations
+  use parent ID zero, child allocation preserves the parent, and relays preserve
+  both IDs.
+- Expanded the component namespace to 256 entries with usable IDs 1..254 and
+  centralized reserved-ID validation across core, links, and topology.
+- Replaced the 64-bit visited mask with an exact owner-protected eight-word
+  visited set, retaining 64 as the independent topology link capacity.
+- Added a fixed synchronous trace record/hook carrying timestamp, event, buffer
+  lineage, handle, pool, component, and transfer sequence.
+- Retained the honest atomic64 control-memory requirement for existing shared
+  counters and lifecycle timestamps; the local identity generator itself uses
+  only 32-bit atomics.
+- Synchronized the Linux kernel descriptor `pool_id` layout and kernel ABI 2,
+  and updated the A->B->C->D chain example to create five child buffers.
+- Added deterministic rollover/entropy seams and tests for packing, lineage,
+  relay preservation, concurrency, reserved IDs, visited words, tracing, and
+  ABI-1 rejection.
+- Added the ABI-2 transient `CLAIMING` state so allocation and receive publish
+  `OWNED` only after metadata and local-view construction complete; recovery
+  ignores in-progress claims and failed claims free directly.
+- Added explicit recovery for claims abandoned by a crash before claimant
+  identity can be fully published; the final contract requires full pool
+  quiescence and reclaims all remaining claims without an age threshold.
+- Strengthened identity rollover with a 32-bit atomic active-issuer gate that
+  rotation drains before replacing the session/resetting sequence, including a
+  controlled concurrent rollover regression.
+- Made Linux kernel entropy readiness-aware with `get_random_bytes_wait()`,
+  tightened trace-hook reentrancy/configuration documentation, and made the
+  lineage example validate and report every child ID, parent, size, and payload.
+- Added `ZIPC_ERR_TRANSPORT_PUBLISHED` across public and kernel status enums.
+  Backends now distinguish pre-publication failure, which permits sender
+  rollback, from post-publication notification/callback failure, which leaves
+  the slot in `TRANSFER`, invalidates sender ownership, and returns the error.
+- Simplified `zipc_pool_recover_claiming()` to reclaim every `CLAIMING` slot
+  only under full external pool quiescence. Recovery no longer uses claim age
+  or partial claimant metadata, attributes no component recovery, and restores
+  `CLAIMING` for retry if payload protection fails.
+- Added regressions for unpublished send rollback, published-error ownership
+  consumption, zero/partial-metadata claims, owner-recovery exclusion, and
+  retryable claiming-recovery protection failure.
+- Ordered strict payload protection inside ownership transitions: release and
+  recovery revoke access before `FREE`, while unpublished-send rollback restores
+  access before `OWNED`; failed restoration leaves a recoverable claim instead
+  of returning unsafe ownership.
+- Defined owner and abandoned-claim recovery as pool-quiesced administrative
+  operations, preventing recovery probes from racing a receiver after its sole
+  transfer descriptor has been consumed.
+- Made the 32-bit slot generation atomic so stale-handle validation remains
+  race-free while another component allocates and reuses the slot.
+- Hardened owner recovery to acquire each candidate state before reading
+  owner-protected metadata and to restore nonmatching owner, epoch, or age
+  candidates without reclaiming a reused slot.
+- Made transfer preparation acquire `CLAIMING`, revoke strict payload access,
+  and complete metadata and tracing before publishing `TRANSFER`; unpublished
+  transport failure restores metadata and payload access before `OWNED`.
+- Enabled strict payload access for successful low-level
+  `zipc_buffer_allocate()` calls as well as high-level allocation.
+- No target hardware validation was performed for v0.2.0. Linux tests and the
+  FreeRTOS/bare-metal host-stub integrations are not hardware validation.
+
 ## v0.1.11
 
 - Hardened pool geometry with overflow-safe alignment and size arithmetic,

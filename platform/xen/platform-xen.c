@@ -10,6 +10,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/random.h>
 #include <unistd.h>
 #include <time.h>
 typedef uint16_t domid_t;
@@ -275,7 +276,7 @@ zipc_status_t zipc_platform_transport_send(
 
     struct ioctl_evtchn_notify arg = { .port = transport->local_port };
     if (ioctl(transport->evtchn_fd, IOCTL_EVTCHN_NOTIFY, &arg) < 0)
-        return ZIPC_ERR_TRANSPORT;
+        return ZIPC_ERR_TRANSPORT_PUBLISHED;
     return ZIPC_OK;
 }
 
@@ -358,4 +359,24 @@ uint64_t zipc_platform_time_ns(void)
     if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
         return 0U;
     return (uint64_t)ts.tv_sec * UINT64_C(1000000000) + (uint64_t)ts.tv_nsec;
+}
+
+zipc_status_t zipc_platform_random(void *buffer, size_t length)
+{
+    if (buffer == NULL && length != 0U)
+        return ZIPC_ERR_INVALID_ARGUMENT;
+    uint8_t *next = buffer;
+    while (length != 0U) {
+        const ssize_t count = getrandom(next, length, 0);
+        if (count < 0) {
+            if (errno == EINTR)
+                continue;
+            return ZIPC_ERR_ENTROPY_UNAVAILABLE;
+        }
+        if (count == 0)
+            return ZIPC_ERR_ENTROPY_UNAVAILABLE;
+        next += (size_t)count;
+        length -= (size_t)count;
+    }
+    return ZIPC_OK;
 }

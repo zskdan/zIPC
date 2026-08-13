@@ -2,6 +2,7 @@
 #include <zipc/zipc-kernel.h>
 
 #include <linux/ktime.h>
+#include <linux/random.h>
 #ifdef __KERNEL__
 #include <linux/slab.h>
 #include <linux/smp.h>
@@ -66,8 +67,12 @@ zipc_status_t zipc_kernel_transport_open(
     t->wait = cfg->wait;
     t->context = cfg->context;
 
-    if (t->type == ZIPC_KERNEL_TRANSPORT_RING_WAITQUEUE &&
-        (!t->ring || t->ring->depth < 2U || !t->waitq)) {
+    if (t->type != ZIPC_KERNEL_TRANSPORT_KFIFO &&
+        (!t->ring || t->ring->depth < 2U)) {
+        kfree(t);
+        return ZIPC_ERR_INVALID_ARGUMENT;
+    }
+    if (t->type == ZIPC_KERNEL_TRANSPORT_RING_WAITQUEUE && !t->waitq) {
         kfree(t);
         return ZIPC_ERR_INVALID_ARGUMENT;
     }
@@ -85,9 +90,14 @@ zipc_status_t zipc_kernel_transport_send(zipc_kernel_transport_t *t,
         return ZIPC_ERR_INVALID_ARGUMENT;
 
     if (t->type == ZIPC_KERNEL_TRANSPORT_KFIFO) {
+        unsigned int copied;
+
         if (!t->fifo || kfifo_avail(t->fifo) < sizeof(*message))
             return ZIPC_ERR_TRANSPORT;
-        kfifo_in(t->fifo, message, sizeof(*message));
+        copied = kfifo_in(t->fifo, message, sizeof(*message));
+        if (copied != sizeof(*message))
+            return copied != 0U ? ZIPC_ERR_TRANSPORT_PUBLISHED
+                                : ZIPC_ERR_TRANSPORT;
         if (t->waitq)
             wake_up_interruptible(t->waitq);
         return ZIPC_OK;
@@ -98,7 +108,7 @@ zipc_status_t zipc_kernel_transport_send(zipc_kernel_transport_t *t,
         return status;
 
     if (t->notify && t->notify(t->context))
-        return ZIPC_ERR_PLATFORM;
+        return ZIPC_ERR_TRANSPORT_PUBLISHED;
     if (t->waitq)
         wake_up_interruptible(t->waitq);
     return ZIPC_OK;
@@ -146,4 +156,14 @@ void zipc_kernel_transport_close(zipc_kernel_transport_t *transport)
 uint64_t zipc_platform_time_ns(void)
 {
     return (uint64_t)ktime_get_ns();
+}
+
+zipc_status_t zipc_platform_random(void *buffer, size_t length)
+{
+    if (!buffer && length != 0U)
+        return ZIPC_ERR_INVALID_ARGUMENT;
+    if (length == 0U)
+        return ZIPC_OK;
+    return get_random_bytes_wait(buffer, length) == 0
+         ? ZIPC_OK : ZIPC_ERR_ENTROPY_UNAVAILABLE;
 }

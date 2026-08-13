@@ -42,7 +42,7 @@ static void child_run(unsigned int index,
     char stage[32];
 
     if (index == 0U) {
-        CHECK_STATUS(zipc_buffer_alloc_ex(links[0].sender, 0U, 64U, 0U, &buffer));
+        CHECK_STATUS(zipc_buffer_alloc_ex(links[0].sender, 0U, 64U, 0U, &buffer, NULL));
         CHECK_STATUS(zipc_buffer_append(&buffer, "P0", 2U));
         printf("P%u[pid=%ld]: %.*s\n", index, (long)getpid(),
                (int)zipc_buffer_length(&buffer),
@@ -67,9 +67,10 @@ static void child_run(unsigned int index,
     } else {
         printf("final: %.*s\n", (int)zipc_buffer_length(&buffer),
                (const char *)zipc_buffer_data(&buffer));
+        const zipc_visited_set_t visited = zipc_buffer_visited(&buffer);
         printf("hop_count=%u distinct=%u\n",
                zipc_buffer_hop_count(&buffer),
-               (unsigned int)__builtin_popcountll(zipc_buffer_visited_mask(&buffer)));
+               zipc_visited_set_count(&visited));
         CHECK_STATUS(zipc_buffer_release(&buffer));
         fflush(stdout);
     }
@@ -135,14 +136,14 @@ int main(void)
         };
         const zipc_link_config_t sender_cfg = {
             .pool = &pool,
-            .local_component = (zipc_component_id_t)i,
-            .remote_component = (zipc_component_id_t)(i + 1U),
+            .local_component = (zipc_component_id_t)(i + 1U),
+            .remote_component = (zipc_component_id_t)(i + 2U),
             .transport = transport_cfg,
         };
         const zipc_link_config_t receiver_cfg = {
             .pool = &pool,
-            .local_component = (zipc_component_id_t)(i + 1U),
-            .remote_component = (zipc_component_id_t)i,
+            .local_component = (zipc_component_id_t)(i + 2U),
+            .remote_component = (zipc_component_id_t)(i + 1U),
             .transport = transport_cfg,
         };
         CHECK_STATUS(zipc_link_create(&links[i].sender, &sender_cfg));

@@ -1,5 +1,5 @@
 PROJECT_NAME           = "zIPC"
-PROJECT_NUMBER         = 0.1.11
+PROJECT_NUMBER         = 0.2.0
 OUTPUT_DIRECTORY       = build/docs
 INPUT                  = include/zipc/zipc.h include/zipc/zipc-kernel.h docs
 RECURSIVE              = YES

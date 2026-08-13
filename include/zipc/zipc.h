@@ -11,16 +11,18 @@ extern "C" {
 #endif
 
 #define ZIPC_VERSION_MAJOR        0U
-#define ZIPC_VERSION_MINOR        1U
-#define ZIPC_VERSION_PATCH        11U
-#define ZIPC_VERSION_STRING       "0.1.11"
+#define ZIPC_VERSION_MINOR        2U
+#define ZIPC_VERSION_PATCH        0U
+#define ZIPC_VERSION_STRING       "0.2.0"
 
 #define ZIPC_POOL_MAGIC             UINT32_C(0x5A495043)
-#define ZIPC_POOL_ABI_VERSION       UINT16_C(1)
+#define ZIPC_POOL_ABI_VERSION       UINT16_C(2)
 #define ZIPC_TRACE_DEPTH            8U
 #define ZIPC_HOP_LIMIT_UNLIMITED    UINT32_MAX
 #define ZIPC_DEADLINE_NONE          UINT64_MAX
-#define ZIPC_MAX_COMPONENTS         64U
+#define ZIPC_COMPONENT_NAMESPACE_SIZE 256U
+#define ZIPC_COMPONENT_ID_MIN       UINT16_C(1)
+#define ZIPC_COMPONENT_ID_MAX       UINT16_C(254)
 #define ZIPC_INVALID_COMPONENT_ID   UINT16_MAX
 #define ZIPC_INVALID_HANDLE         UINT64_MAX
 #define ZIPC_PHYS_ADDR_INVALID      UINT64_MAX
@@ -29,7 +31,18 @@ typedef uint64_t zipc_handle_t;
 typedef uint32_t zipc_slot_id_t;
 typedef uint32_t zipc_generation_t;
 typedef uint16_t zipc_component_id_t;
-typedef uint64_t zipc_visited_mask_t;
+typedef uint64_t zipc_buffer_id_t;
+
+/** Immutable identity and lineage assigned when a buffer is allocated. */
+typedef struct {
+    zipc_buffer_id_t id;
+    zipc_buffer_id_t parent_id;
+} zipc_buffer_identity_t;
+
+/** Exact owner-protected visited-component set for the 256-ID namespace. */
+typedef struct {
+    uint32_t words[8];
+} zipc_visited_set_t;
 
 typedef enum {
     ZIPC_OK = 0,
@@ -52,11 +65,15 @@ typedef enum {
     ZIPC_ERR_COMPONENT_STALE,
     ZIPC_ERR_RECOVERY_REQUIRED,
     ZIPC_ERR_INVALID_BUFFER,
-    ZIPC_ERR_BUFFER_TOO_SMALL
+    ZIPC_ERR_BUFFER_TOO_SMALL,
+    ZIPC_ERR_ENTROPY_UNAVAILABLE,
+    /** Descriptor is visible; sender ownership was consumed despite failure. */
+    ZIPC_ERR_TRANSPORT_PUBLISHED
 } zipc_status_t;
 
 typedef enum {
     ZIPC_SLOT_FREE = 0,
+    ZIPC_SLOT_CLAIMING, /**< Transient exclusive protocol work. */
     ZIPC_SLOT_OWNED,
     ZIPC_SLOT_TRANSFER,
     ZIPC_SLOT_ERROR
@@ -67,7 +84,7 @@ typedef struct {
     uint32_t length;
 } zipc_buffer_region_t;
 
-/** Returns the immutable library version string, e.g. "0.1.11". */
+/** Returns the immutable library version string, e.g. "0.2.0". */
 const char *zipc_version_string(void);
 
 typedef enum {
@@ -86,6 +103,34 @@ typedef struct {
     uint16_t event;
 } zipc_trace_entry_t;
 
+/** Fixed process-local trace record emitted synchronously by the core. */
+typedef struct {
+    uint64_t timestamp_ns;
+    zipc_buffer_id_t buffer_id;
+    zipc_buffer_id_t parent_id;
+    zipc_handle_t handle;
+    uint32_t pool_id;
+    uint32_t transfer_sequence;
+    zipc_component_id_t component_id;
+    uint16_t event;
+} zipc_trace_record_t;
+
+/**
+ * Optional synchronous, non-reentrant trace callback.
+ *
+ * The callback runs in the protocol caller's context and must not call zIPC,
+ * mutate the traced buffer, or block protocol progress.
+ */
+typedef void (*zipc_trace_hook_t)(const zipc_trace_record_t *record,
+                                  void *context);
+
+/**
+ * Configure the process-local trace callback. Passing NULL disables it.
+ * Configuration must be externally serialized with all protocol operations;
+ * the callback and context are not changed atomically as a pair.
+ */
+void zipc_trace_set_hook(zipc_trace_hook_t hook, void *context);
+
 typedef struct {
     _Atomic uint32_t epoch;
     _Atomic uint32_t active;
@@ -94,20 +139,23 @@ typedef struct {
 } zipc_component_status_t;
 
 /*
- * Only state is used to arbitrate slot ownership. The remaining slot fields
- * are protected by exclusive ownership and published through state release/
- * acquire. Component-table fields are atomic because independent components
- * update their own heartbeat and lifecycle concurrently.
+ * Only state is used to arbitrate slot ownership. CLAIMING is a transient
+ * state while a successful allocator, sender, or receiver accesses and updates
+ * owner-protected fields. OWNED and TRANSFER are published afterward with
+ * release.
+ * Component-table fields are atomic because independent components update
+ * their own heartbeat and lifecycle concurrently.
  */
 typedef struct {
     _Atomic uint32_t state;
-    zipc_generation_t generation;
+    _Atomic zipc_generation_t generation;
     zipc_component_id_t owner_id;
     zipc_component_id_t next_owner_id;
     uint32_t owner_epoch;
     uint32_t hop_count;
     uint32_t hop_limit;
-    zipc_visited_mask_t visited_mask;
+    zipc_visited_set_t visited;
+    zipc_buffer_identity_t identity;
     zipc_buffer_region_t region;
     uint32_t transfer_sequence;
     uint16_t payload_type;
@@ -136,7 +184,7 @@ typedef struct {
     _Atomic uint64_t allocation_failure_count;
     _Atomic uint64_t protocol_error_count;
     _Atomic uint64_t recovery_count;
-    zipc_component_status_t components[ZIPC_MAX_COMPONENTS];
+    zipc_component_status_t components[ZIPC_COMPONENT_NAMESPACE_SIZE];
     uint32_t reserved[8];
 } zipc_pool_header_t;
 
@@ -240,6 +288,8 @@ zipc_status_t zipc_platform_memory_protect_rw(zipc_platform_memory_t *memory,
 void *zipc_platform_alloc(size_t size);
 void zipc_platform_free(void *pointer);
 uint64_t zipc_platform_time_ns(void);
+/** Fill @p buffer with cryptographically secure platform entropy. */
+zipc_status_t zipc_platform_random(void *buffer, size_t length);
 
 /* Pool API --------------------------------------------------------------- */
 
@@ -252,7 +302,7 @@ typedef enum {
 } zipc_pool_flag_t;
 
 typedef struct {
-    /* ABI 1 requires CPU read/write plus 32-bit and 64-bit atomics. */
+    /* ABI 2 requires CPU read/write plus 32-bit and 64-bit atomics. */
     zipc_platform_memory_t *control_memory;
     size_t control_offset;
 
@@ -314,8 +364,9 @@ zipc_status_t zipc_pool_attach(zipc_pool_t *pool,
                              const zipc_pool_config_t *config);
 
 zipc_status_t zipc_buffer_allocate(zipc_pool_t *pool,
-                                 zipc_component_id_t allocator,
-                                 zipc_buffer_t *buffer);
+                                  zipc_component_id_t allocator,
+                                  zipc_buffer_id_t parent_id,
+                                  zipc_buffer_t *buffer);
 
 zipc_status_t zipc_buffer_from_handle(zipc_pool_t *pool,
                                     zipc_handle_t handle,
@@ -326,11 +377,19 @@ zipc_status_t zipc_buffer_set_region(zipc_buffer_t *buffer,
                                    uint32_t offset,
                                    uint32_t length);
 
+/**
+ * Prepare and publish a low-level ownership transfer.
+ *
+ * On success this function publishes the slot in TRANSFER and revokes local
+ * payload access when strict ownership protection is enabled. The caller must
+ * not access the payload unless an unpublished transport failure is rolled back
+ * by the high-level send path or the buffer is subsequently claimed.
+ */
 zipc_status_t zipc_buffer_prepare_transfer(zipc_pool_t *pool,
-                                         zipc_handle_t handle,
-                                         zipc_component_id_t current_owner,
-                                         zipc_component_id_t next_owner,
-                                         zipc_message_t *message);
+                                           zipc_handle_t handle,
+                                           zipc_component_id_t current_owner,
+                                           zipc_component_id_t next_owner,
+                                           zipc_message_t *message);
 
 zipc_status_t zipc_buffer_claim(zipc_pool_t *pool,
                               const zipc_message_t *message,
@@ -370,16 +429,47 @@ zipc_status_t zipc_component_unregister(zipc_pool_t *pool,
                                         zipc_component_id_t component,
                                         uint32_t epoch);
 zipc_status_t zipc_component_snapshot(const zipc_pool_t *pool,
-                                      zipc_component_id_t component,
-                                      zipc_component_snapshot_t *snapshot);
+                                       zipc_component_id_t component,
+                                       zipc_component_snapshot_t *snapshot);
+/**
+ * Recover slots belonging to one dead component runtime.
+ *
+ * The caller must first quiesce all protocol operations on @p pool. This
+ * administrative operation transiently acquires candidate slot states while
+ * validating owner-protected component and epoch metadata.
+ */
 zipc_status_t zipc_pool_recover_owner(zipc_pool_t *pool,
-                                      zipc_component_id_t component,
-                                      uint32_t dead_epoch,
-                                      uint64_t minimum_age_ns,
-                                      zipc_recovery_result_t *result);
+                                       zipc_component_id_t component,
+                                       uint32_t dead_epoch,
+                                       uint64_t minimum_age_ns,
+                                       zipc_recovery_result_t *result);
+/**
+ * Reclaim abandoned transient claims after externally quiescing the pool.
+ *
+ * The caller must serialize this operation against every protocol operation on
+ * @p pool: allocation, send (including rollback), receive/claim, release,
+ * owner recovery, format/reset, shutdown, and another claiming recovery. Under
+ * that full quiescence every remaining CLAIMING slot is abandoned and is
+ * reclaimed without consulting its potentially partial metadata. Protection
+ * failure leaves the slot in CLAIMING so recovery can be retried.
+ *
+ * @param pool Fully quiesced pool to recover.
+ * @param recovered_out Optional number of slots reclaimed before return.
+ */
+zipc_status_t zipc_pool_recover_claiming(zipc_pool_t *pool,
+                                         uint32_t *recovered_out);
 uint32_t zipc_slot_trace_copy(const zipc_slot_control_t *slot,
-                              zipc_trace_entry_t *entries,
-                              uint32_t capacity);
+                               zipc_trace_entry_t *entries,
+                                uint32_t capacity);
+
+/** Return true only for usable component IDs 1 through 254. */
+bool zipc_component_id_valid(zipc_component_id_t component);
+
+/** Test one component in an exact visited set; reserved IDs always test false. */
+bool zipc_visited_set_test(const zipc_visited_set_t *visited,
+                           zipc_component_id_t component);
+/** Count usable component IDs present in an exact visited set. */
+uint32_t zipc_visited_set_count(const zipc_visited_set_t *visited);
 
 /* Transport API ---------------------------------------------------------- */
 
@@ -456,16 +546,20 @@ const char *zipc_payload_backend_name(zipc_payload_backend_type_t backend);
 const char *zipc_descriptor_backend_name(zipc_descriptor_backend_type_t backend);
 const char *zipc_event_backend_name(zipc_event_backend_type_t backend);
 
-/*
+/**
  * Platform signal callbacks used by doorbell-style transports such as IPI.
  * The callback implementation owns interrupt triggering, acknowledgement,
  * cache maintenance, and any architecture-specific barriers.
+ *
+ * Send callbacks run after the adapter has published a descriptor to its ring
+ * or mailbox. Any callback error is therefore reported to the application as
+ * ZIPC_ERR_TRANSPORT_PUBLISHED, regardless of the callback's error value.
  */
 typedef zipc_status_t (*zipc_platform_signal_send_fn)(void *context);
 typedef zipc_status_t (*zipc_platform_signal_wait_fn)(void *context,
                                                     uint32_t timeout_ticks);
 
-/*
+/**
  * Secure-world invocation hook.
  *
  * Linux: normally implemented by a kernel-mediated character-device/ioctl
@@ -473,6 +567,9 @@ typedef zipc_status_t (*zipc_platform_signal_wait_fn)(void *context,
  * FreeRTOS/bare metal: may issue an architecture-specific SMC directly.
  *
  * The callback executes one synchronous request and returns one response.
+ * Its error result cannot distinguish failure before descriptor visibility
+ * from failure afterward, so adapters conservatively report any callback
+ * error as ZIPC_ERR_TRANSPORT_PUBLISHED.
  */
 typedef zipc_status_t (*zipc_platform_secure_call_fn)(
     void *context,
@@ -786,19 +883,30 @@ zipc_status_t zipc_link_open(zipc_link_t **link, const char *name);
 
 /**
  * Allocate an owned buffer whose initial logical size is @p size.
+ * @param parent Optional currently owned buffer whose ID becomes parent_id.
  * On success the caller owns the returned buffer until send or release.
  */
 zipc_status_t zipc_buffer_alloc(zipc_link_t *link, size_t size,
-                                zipc_buffer_t *buffer);
-/** Allocate with explicit headroom and tailroom requirements. */
+                                 zipc_buffer_t *buffer,
+                                 const zipc_buffer_t *parent);
+/**
+ * Allocate with explicit headroom and tailroom requirements.
+ * @param parent Optional currently owned buffer whose ID becomes parent_id.
+ */
 zipc_status_t zipc_buffer_alloc_ex(zipc_link_t *link, size_t size,
                                    size_t headroom, size_t tailroom,
-                                   zipc_buffer_t *buffer);
+                                   zipc_buffer_t *buffer,
+                                   const zipc_buffer_t *parent);
 
-/** Transfer ownership. On successful return @p buffer is invalidated. */
+/**
+ * Transfer ownership. ZIPC_OK and ZIPC_ERR_TRANSPORT_PUBLISHED both invalidate
+ * @p buffer; the latter reports a post-publication notification failure and
+ * leaves the shared slot in TRANSFER. Other transport errors preserve sender
+ * ownership by rolling back the unpublished transfer.
+ */
 zipc_status_t zipc_send(zipc_link_t *link, zipc_buffer_t *buffer);
 /**
- * Compatibility timed send. In ABI 1 the argument does not override the
+ * Compatibility timed send. In ABI 2 the argument does not override the
  * timeout fixed when the transport was opened; backend configuration remains
  * authoritative.
  */
@@ -808,14 +916,17 @@ zipc_status_t zipc_send_timeout(zipc_link_t *link, zipc_buffer_t *buffer,
 /** Receive and claim ownership of the next buffer. */
 zipc_status_t zipc_recv(zipc_link_t *link, zipc_buffer_t *buffer);
 /**
- * Compatibility timed receive. In ABI 1 the argument does not override the
+ * Compatibility timed receive. In ABI 2 the argument does not override the
  * timeout fixed when the transport was opened; backend configuration remains
  * authoritative.
  */
 zipc_status_t zipc_recv_timeout(zipc_link_t *link, zipc_buffer_t *buffer,
                                  uint32_t timeout_ticks);
 
-/** Release an owned buffer. On success @p buffer is invalidated. */
+/**
+ * Release an owned buffer. Payload access is revoked before the slot is
+ * published FREE. On success @p buffer is invalidated.
+ */
 zipc_status_t zipc_buffer_release(zipc_buffer_t *buffer);
 
 /** Copy-oriented migration helpers. */
@@ -889,7 +1000,12 @@ bool zipc_buffer_is_valid(const zipc_buffer_t *buffer);
 zipc_handle_t zipc_buffer_handle(const zipc_buffer_t *buffer);
 uint32_t zipc_buffer_pool_id(const zipc_buffer_t *buffer);
 uint32_t zipc_buffer_hop_count(const zipc_buffer_t *buffer);
-zipc_visited_mask_t zipc_buffer_visited_mask(const zipc_buffer_t *buffer);
+/** Return the immutable buffer ID, or zero for an invalid local object. */
+zipc_buffer_id_t zipc_buffer_id(const zipc_buffer_t *buffer);
+/** Return the immutable parent ID, or zero for a root/invalid local object. */
+zipc_buffer_id_t zipc_buffer_parent_id(const zipc_buffer_t *buffer);
+/** Copy the exact visited-component set; an invalid buffer returns all zeroes. */
+zipc_visited_set_t zipc_buffer_visited(const zipc_buffer_t *buffer);
 uint32_t zipc_buffer_owner_epoch(const zipc_buffer_t *buffer);
 zipc_slot_state_t zipc_buffer_slot_state(const zipc_buffer_t *buffer);
 uint32_t zipc_buffer_trace_copy(const zipc_buffer_t *buffer,
@@ -923,6 +1039,43 @@ static inline zipc_slot_id_t zipc_handle_slot_id(zipc_handle_t handle)
 static inline zipc_generation_t zipc_handle_generation(zipc_handle_t handle)
 {
     return (zipc_generation_t)(handle >> 32);
+}
+
+/** Pack a buffer ID without relying on implementation-defined C bitfields. */
+static inline zipc_buffer_id_t zipc_buffer_id_make(
+    zipc_component_id_t allocator, uint32_t session, uint32_t sequence)
+{
+    return ((uint64_t)(allocator & UINT16_C(0xff)) << 56) |
+           ((uint64_t)(session & UINT32_C(0x00ffffff)) << 32) |
+           (uint64_t)sequence;
+}
+
+/** Extract the allocator component from a packed buffer ID. */
+static inline zipc_component_id_t zipc_buffer_id_component(zipc_buffer_id_t id)
+{
+    return (zipc_component_id_t)(id >> 56);
+}
+
+/** Extract the 24-bit runtime session from a packed buffer ID. */
+static inline uint32_t zipc_buffer_id_session(zipc_buffer_id_t id)
+{
+    return (uint32_t)((id >> 32) & UINT32_C(0x00ffffff));
+}
+
+/** Extract the 32-bit sequence from a packed buffer ID. */
+static inline uint32_t zipc_buffer_id_sequence(zipc_buffer_id_t id)
+{
+    return (uint32_t)id;
+}
+
+/** Test whether a nonzero packed buffer ID has a usable component/session. */
+static inline bool zipc_buffer_id_valid(zipc_buffer_id_t id)
+{
+    const zipc_component_id_t component = zipc_buffer_id_component(id);
+    return component >= ZIPC_COMPONENT_ID_MIN &&
+           component <= ZIPC_COMPONENT_ID_MAX &&
+           zipc_buffer_id_session(id) != 0U &&
+           zipc_buffer_id_sequence(id) != UINT32_MAX;
 }
 
 #ifdef __cplusplus

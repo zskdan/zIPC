@@ -34,16 +34,18 @@ slot control structures.
 ### Slot
 
 A slot contains control metadata and one payload region. The authoritative slot
-state is atomic. Other metadata is written only by the current owner and becomes
+state and stale-handle generation are atomic. Other metadata is written only by
+the current owner and becomes
 visible through release/acquire state transitions.
 
 Relevant metadata includes:
 
 - generation;
+- immutable buffer ID and parent ID;
 - owner and next-owner component IDs;
 - owner epoch;
 - hop count and hop limit;
-- visited-component mask;
+- exact 256-bit visited-component set;
 - payload offset and length;
 - transfer sequence;
 - deadline;
@@ -76,27 +78,60 @@ A link is directional and binds:
 - a remote component;
 - one transport instance.
 
-Bidirectional communication normally uses two logical links. Future v0.2 work
-adds a stable link ID and a local opaque cookie.
+Bidirectional communication normally uses two logical links. Stable link ID and
+a local opaque cookie remain post-v0.2.0 work.
 
 ## Ownership state model
 
 Typical flow:
 
 ```text
-FREE -> OWNED -> TRANSFER -> OWNED -> ... -> FREE
+FREE -> CLAIMING -> OWNED -> CLAIMING -> TRANSFER -> CLAIMING -> OWNED -> ... -> FREE
 ```
 
-- Allocation atomically claims `FREE -> OWNED`.
-- The current owner prepares payload and transfer metadata.
-- Send publishes ownership toward the next owner.
+- Allocation atomically claims `FREE -> CLAIMING`, initializes all
+  owner-protected metadata and the local view, then publishes `OWNED` with a
+  release store.
+- Send acquires `OWNED -> CLAIMING`, validates and writes transfer metadata
+  while exclusive, revokes strict payload access, records the send trace, then
+  publishes `TRANSFER` with a release store.
 - Receive validates generation, transfer sequence, expected owner, limits, and
-  deadline before claiming the slot.
+  deadline while it exclusively holds `CLAIMING`; validation failure restores
+  `TRANSFER`, while success updates receiver metadata and makes the local view,
+  then publishes `OWNED` with a release store.
 - The final owner releases the slot to `FREE`.
-- Recovery may reclaim a slot belonging to a dead component epoch.
+- Owner recovery may reclaim an `OWNED` or `TRANSFER` slot belonging to a dead
+  component epoch. It ignores transient `CLAIMING` slots.
+
+`CLAIMING` prevents observers from acquiring `OWNED` before ordinary metadata
+is complete. If local-view creation fails, the claimer clears the slot and
+publishes `FREE` directly; it does not invoke the normal `OWNED -> FREE` release
+path for a state that was never published as owned.
+
+A crash can abandon `CLAIMING` before claimant identity is fully published.
+`zipc_pool_recover_claiming()` provides explicit cleanup after the integrator
+externally quiesces all protocol operations on the pool, including allocation,
+send and rollback, receive/claim, release, owner recovery, format/reset,
+shutdown, and another claiming recovery. Under full quiescence every remaining
+claim is abandoned; recovery uses neither age nor potentially partial claimant
+metadata. A protection failure restores `CLAIMING` for retry and is not traced
+or counted as completed recovery.
+
+Both recovery APIs are administrative operations performed only after all
+normal protocol activity on the pool is quiesced. Owner recovery transiently
+acquires candidate `OWNED`/`TRANSFER` states before validating owner-protected
+component, epoch, and age metadata. Quiescence prevents that inspection from
+interfering with a receiver that has already consumed a transfer descriptor.
+
+Strict payload protection is part of ownership publication. Allocation and
+receive enable access before publishing `OWNED`; transfer preparation, release,
+and owner recovery revoke access before publishing `TRANSFER` or `FREE`; an
+unpublished-send rollback restores access before publishing `OWNED`. If
+restoration fails, zIPC
+invalidates the local buffer and leaves `CLAIMING` for administrative recovery.
 
 Exactly one component owns the buffer at every point. Loops are allowed, so
-`hop_count` counts processing passes while `visited_mask` counts distinct
+`hop_count` counts processing passes while the exact visited set counts distinct
 components.
 
 ## Payload backends
@@ -115,7 +150,7 @@ Control-memory requirements:
 - CPU readable;
 - CPU writable;
 - 32-bit atomic operations;
-- 64-bit atomic operations, because pool ABI 1 actively uses shared
+- 64-bit atomic operations, because pool ABI 2 retains shared
   `_Atomic uint64_t` counters and component lifecycle fields;
 - correct sharing and ordering attributes for all participants.
 
@@ -142,7 +177,16 @@ Current concepts include:
 A logical link owns its transport instance. Shared rings are SPSC unless a
 specific implementation states otherwise.
 
-## Resilience in v0.1
+Transport send failures distinguish publication. `ZIPC_ERR_TRANSPORT` means the
+descriptor did not become visible, so the core rolls `TRANSFER` back to `OWNED`.
+`ZIPC_ERR_TRANSPORT_PUBLISHED` means descriptor publication succeeded but a
+later event/IRQ/callback failed; the core returns that error, invalidates the
+sender's local buffer, and leaves the slot in `TRANSFER`. It must not report
+success or roll ownership back. Callback contracts that cannot identify the
+failure point are documented and classified conservatively once publication
+may have occurred.
+
+## Resilience
 
 - Component epochs detect restarts.
 - Heartbeats provide lifecycle evidence.
@@ -154,7 +198,7 @@ specific implementation states otherwise.
 
 ## Current execution and planned model
 
-In v0.1.11, zIPC calls execute in the caller context and the core creates no
+In v0.2.0, zIPC calls execute in the caller context and the core creates no
 threads. Depending on the selected backend, a send or receive may block or poll
 inside that call. There is currently no public asynchronous, service-loop, or
 reactor API.
@@ -220,7 +264,7 @@ A representative acceptance profile:
 
 ## Observability by design
 
-The current v0.1.11 implementation records fixed-depth per-slot entries for
+The v0.2.0 implementation records fixed-depth per-slot entries for
 allocation, send, receive, release, recovery, and error transitions. Each
 entry contains a timestamp, transfer sequence, component ID, and event type;
 `zipc-stat` exposes those entries.
@@ -231,19 +275,14 @@ caller has already been validated as the current owner. Claim failures before
 the ownership state transition deliberately do not write owner-protected slot
 trace fields, because doing so could race the legitimate owner/receiver.
 
-Future versions will add an optional fixed-format native trace contract rather
-than requiring later reverse engineering. The planned event carries identity
-(`link_id`, `message_id`, `correlation_id`, `endpoint_id`, `backend_cookie`),
-context (`pid`, `tid`, `timestamp`, `event`, `flags`), and state (`length`,
-`queue_depth`). Emission should be opt-in and zero-cost when disabled:
-
-```c
-#ifdef ZIPC_TRACE_ENABLE
-    ZIPC_TRACE(event);
-#else
-    #define ZIPC_TRACE(...) do { } while (0)
-#endif
-```
+ABI 2 also provides an optional fixed `zipc_trace_record_t` callback carrying
+timestamp, event, buffer ID, parent ID, handle, pool ID, component ID, and
+transfer sequence. It emits synchronously in caller context and creates no
+threads or dynamic allocations. It is non-reentrant: the callback must not call
+zIPC, mutate the traced buffer, or block protocol progress. Hook configuration
+must be externally serialized with all protocol operations because the hook and
+context are process-local shared state. Rich link/backend/process context
+remains future work.
 
 ### Two trace layers
 
@@ -304,7 +343,39 @@ zIPC state ordering and cache coherency are separate concerns.
 - Linux production use should rely on a driver and the DMA API where applicable.
 - Initial R5 bring-up should use Normal non-cacheable shared memory.
 
-## Planned identity model
+## Buffer identity
+
+Pool ABI 2 adds immutable buffer storage identity and parent lineage:
+
+```text
+bits 63..56  allocator component ID (1..254)
+bits 55..32  random nonzero per-runtime session
+bits 31..0   allocation sequence
+```
+
+One process-global generator table has 256 entries. All links using the same
+local component ID share an entry. Each entry uses only 32-bit atomics: one
+session/rotation word, one sequence word, and one active-issuer count. An issuer
+joins the active set, rechecks that the session is unchanged and not rotating,
+reserves a sequence, emits the ID, and leaves. At exhaustion, one rotator marks
+the session rotating, preventing new issuers from joining, waits for the active
+count to drain to zero, obtains a distinct nonzero session, resets sequence, and
+publishes the new stable session. This gate prevents a delayed reservation from
+crossing a rotation or being mixed with a later reuse of a session value. Gate
+and session operations are sequentially consistent; sequence reservation stays
+relaxed because it occurs inside the stable counted generation.
+Sequence zero through `UINT32_MAX - 1` are issued and `UINT32_MAX` triggers
+rotation. Entropy failure restores the previous exhausted stable session (or
+the uninitialized state), so no ID is emitted and a later call may retry. The
+table is not automatically reseeded after `fork()`. Fork before
+the first allocation for a component, `exec()` one side, or use distinct
+component IDs; parent and child must not continue allocating from the same
+already-initialized inherited generator state.
+
+The packing is a numeric contract, not a byte-serialized wire format. Current
+shared-memory deployments assume participants agree on native endianness.
+
+### Other identity concepts
 
 The current protocol identifies components, generation-protected slots, and
 transfer sequences. Future versions will additionally distinguish identities
@@ -314,6 +385,8 @@ that other systems conflate:
 link_id          stable identity of one logical connection
 link_cookie      local application context for a link
 request_cookie   local context for one asynchronous operation
+buffer_id        immutable allocated-buffer identity (implemented)
+parent_id        immutable direct lineage parent (implemented)
 message_id       unique identity of one transmitted message
 correlation_id   end-to-end identity of a request/reply or larger transaction
 endpoint_id      identity of one endpoint
@@ -324,8 +397,6 @@ backend_cookie   maps zIPC activity onto the underlying backend (NNG, Unix,
 ```
 
 These values must not be conflated. In particular, pointer-valued cookies are
-local to one address space and must never be transported. A future `message_id`
-accompanying each send/receive will make end-to-end correlation deterministic
-across protocol and backend layers; `backend_cookie` will let observability map
-zIPC activity to the concrete transport without guessing. A stable `link_id`
-and local opaque `link_cookie` are v0.2 work.
+local to one address space and must never be transported. Future request/message
+identity and backend cookies may add semantics without changing buffer identity.
+Stable link ID and local link cookie are deferred beyond v0.2.0.

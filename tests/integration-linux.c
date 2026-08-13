@@ -14,10 +14,10 @@
 } while (0)
 
 enum {
-    COMP_A = 0,
-    COMP_B = 1,
-    COMP_C = 2,
-    COMP_D = 3
+    COMP_A = 1,
+    COMP_B = 2,
+    COMP_C = 3,
+    COMP_D = 4
 };
 
 static void transfer(zipc_pool_t *pool,
@@ -228,7 +228,7 @@ int main(void)
     CHECK(zipc_platform_transport_open(&link_bd, &bd_cfg));
 
     zipc_buffer_t buffer;
-    CHECK(zipc_buffer_allocate(&pool, COMP_A, &buffer));
+    CHECK(zipc_buffer_allocate(&pool, COMP_A, 0U, &buffer));
     CHECK(zipc_buffer_set_region(&buffer, 16U, 5U));
     memcpy(zipc_buffer_data(&buffer), "hello", 5U);
 
@@ -245,17 +245,17 @@ int main(void)
     transfer(&pool, link_bd, COMP_B, COMP_D, &buffer);
 
     printf("D consumed data='%s'\n", (char *)zipc_buffer_data(&buffer));
-    printf("hop_count=%u distinct_components=%u visited_mask=0x%016llx\n",
+    const zipc_visited_set_t visited = zipc_buffer_visited(&buffer);
+    printf("hop_count=%u distinct_components=%u\n",
            zipc_buffer_hop_count(&buffer),
-           (unsigned)__builtin_popcountll(zipc_buffer_visited_mask(&buffer)),
-           (unsigned long long)zipc_buffer_visited_mask(&buffer));
+           zipc_visited_set_count(&visited));
     printf("control_caps=0x%08x payload_caps=0x%08x\n",
            zipc_platform_memory_capabilities(control_memory),
            zipc_platform_memory_capabilities(payload_memory));
 
     if (strcmp((char *)zipc_buffer_data(&buffer), "C:hello-B-B2") != 0 ||
         zipc_buffer_hop_count(&buffer) != 5U ||
-        __builtin_popcountll(zipc_buffer_visited_mask(&buffer)) != 4) {
+        zipc_visited_set_count(&visited) != 4U) {
         fprintf(stderr, "validation failed\n");
         return EXIT_FAILURE;
     }

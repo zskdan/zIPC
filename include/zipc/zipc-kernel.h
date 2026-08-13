@@ -7,13 +7,14 @@
 #include <linux/wait.h>
 #include <linux/kfifo.h>
 
-#define ZIPC_KERNEL_ABI_VERSION 1U
+#define ZIPC_KERNEL_ABI_VERSION 2U
 
 typedef u64 zipc_handle_t;
 typedef u16 zipc_component_id_t;
 
 typedef struct {
     zipc_handle_t handle;
+    u32 pool_id;
     zipc_component_id_t source_component;
     zipc_component_id_t destination_component;
     u32 transfer_sequence;
@@ -34,7 +35,16 @@ typedef enum {
     ZIPC_ERR_REGION_OVERFLOW,
     ZIPC_ERR_UNSUPPORTED_MEMORY,
     ZIPC_ERR_TRANSPORT,
-    ZIPC_ERR_PLATFORM
+    ZIPC_ERR_PLATFORM,
+    ZIPC_ERR_TIMEOUT,
+    ZIPC_ERR_HOP_LIMIT,
+    ZIPC_ERR_DEADLINE,
+    ZIPC_ERR_COMPONENT_STALE,
+    ZIPC_ERR_RECOVERY_REQUIRED,
+    ZIPC_ERR_INVALID_BUFFER,
+    ZIPC_ERR_BUFFER_TOO_SMALL,
+    ZIPC_ERR_ENTROPY_UNAVAILABLE,
+    ZIPC_ERR_TRANSPORT_PUBLISHED
 } zipc_status_t;
 
 typedef enum {
@@ -64,6 +74,7 @@ typedef struct {
     wait_queue_head_t *waitq;
     struct kfifo *fifo;
     void *platform_handle;
+    /* Called after ring publication; failure is TRANSPORT_PUBLISHED. */
     int (*notify)(void *context);
     int (*wait)(void *context, unsigned long timeout_jiffies);
     void *context;
@@ -80,6 +91,8 @@ zipc_status_t zipc_kernel_transport_receive(
     zipc_message_t *message,
     unsigned long timeout_jiffies);
 void zipc_kernel_transport_close(zipc_kernel_transport_t *transport);
+uint64_t zipc_platform_time_ns(void);
+zipc_status_t zipc_platform_random(void *buffer, size_t length);
 
 #endif /* __KERNEL__ */
 #endif /* ZIPC_KERNEL_H */

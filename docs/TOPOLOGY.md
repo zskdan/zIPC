@@ -123,6 +123,11 @@ endpoint direction, and that referenced pool and transport resources have been
 bound. Duplicate names or IDs inside one declarative configuration are
 rejected.
 
+The component namespace has 256 numeric entries, but only IDs 1 through 254 are
+usable. IDs 0 and 255 are reserved and rejected by static, string/file, legacy,
+and explicit link paths. `ZIPC_TOPOLOGY_MAX_LINKS` remains 64 and is unrelated
+to component namespace size.
+
 Registration/load APIs take one explicit policy:
 
 - `ZIPC_TOPOLOGY_REJECT_DUPLICATES` — safest default; fail on an existing name

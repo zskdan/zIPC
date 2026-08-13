@@ -34,7 +34,7 @@ Producer:
 
 ```c
 zipc_buffer_t b;
-zipc_buffer_alloc(link, payload_size, &b);
+zipc_buffer_alloc(link, payload_size, &b, NULL);
 fill(zipc_buffer_data(&b));
 zipc_send(link, &b);          /* consumes b on success */
 ```
@@ -55,8 +55,13 @@ consume(zipc_buffer_data(&b), zipc_buffer_size(&b));
 zipc_buffer_release(&b);      /* consumes b on success */
 ```
 
-Successful `zipc_send()` and `zipc_buffer_release()` invalidate the local object.
-Subsequent access, send, or release is rejected.
+`zipc_send()` invalidates the local object on `ZIPC_OK` and on
+`ZIPC_ERR_TRANSPORT_PUBLISHED`. The latter means the descriptor became visible
+before a later notification failed, so ownership cannot safely roll back and
+the slot remains `TRANSFER`. Ordinary `ZIPC_ERR_TRANSPORT` means publication did
+not occur; sender ownership is restored and the buffer remains valid.
+Successful `zipc_buffer_release()` also invalidates the local object.
+Subsequent access, send, or release of an invalidated object is rejected.
 
 ## Allocation
 
@@ -65,6 +70,25 @@ logical data size, beginning at buffer offset zero.
 
 `zipc_buffer_alloc_ex()` is available when a protocol intentionally reserves
 headroom and/or tailroom.
+
+Both allocation functions take a final optional `const zipc_buffer_t *parent`.
+`NULL` creates a root (`parent_id == 0`). A valid owned parent is not changed or
+consumed, may reside in another pool, and contributes only its immutable ID.
+Each child receives a new unique ID. Use `zipc_buffer_id()` and
+`zipc_buffer_parent_id()` to inspect lineage.
+
+Buffer IDs pack allocator component (8 bits), random nonzero runtime session
+(24 bits), and allocation sequence (32 bits). Sequence zero is used. The last
+issued sequence is `UINT32_MAX - 1`; `UINT32_MAX` is an internal exhaustion
+sentinel that rotates to a distinct session and resumes at zero. Gaps are
+permitted; IDs containing sequence `UINT32_MAX` are invalid. Entropy failure
+returns `ZIPC_ERR_ENTROPY_UNAVAILABLE` and the claimed
+slot is returned to the pool.
+
+The process-global generator does not detect `fork()`. Fork before first use of
+a component generator, `exec()` one side, or assign distinct component IDs;
+continuing the same initialized generator in both parent and child can duplicate
+IDs because process-local atomic state is copied by `fork()`.
 
 ## Recommended buffer API
 
@@ -214,12 +238,12 @@ const char *version = zipc_version_string();
 ```
 
 `zipc_version_string()` always returns the immutable library version string,
-for example `"0.1.11"`. It is safe to call at any time and the returned pointer
+for example `"0.2.0"`. It is safe to call at any time and the returned pointer
 is valid for the lifetime of the library.
 
 ## Timeout compatibility APIs
 
-ABI 1 transports expose only send and receive operations; they do not expose a
+ABI 2 transports expose only send and receive operations; they do not expose a
 per-call timed operation. Consequently `zipc_send_timeout()` and
 `zipc_recv_timeout()` retain their existing signatures but the
 `timeout_ticks` argument cannot override an opened transport. Blocking and
@@ -227,4 +251,35 @@ timeout behavior comes from the transport configuration used at link creation,
 such as `poll_timeout_ns` for Linux shared-memory polling or transport
 `timeout_ticks` on FreeRTOS. A value accepted by the compatibility API is not a
 portable duration contract. Uniform per-call timeout semantics require the
-planned v0.2 transport contract and are not claimed by v0.1.11.
+planned later transport contract and are not claimed by v0.2.0.
+
+## Abandoned claim recovery
+
+`zipc_pool_recover_claiming(pool, recovered_out)` is an administrative recovery
+operation. Before calling it, the integrator must externally quiesce every
+protocol operation on the pool: allocation, send including rollback,
+receive/claim, release, owner recovery, format/reset/shutdown, and another
+claiming recovery. Under that condition every remaining `CLAIMING` slot is
+abandoned, including a crash immediately after the state CAS before timestamp
+or claimant metadata was written.
+
+The sweep does not use `acquired_ns` and does not attribute partial metadata to
+a component. It increments only the pool recovery counter. If payload
+protection fails, the affected slot is restored to `CLAIMING` without a
+completed recovery trace or counter and may be retried while still quiesced.
+
+`zipc_pool_recover_owner()` has the same pool-wide quiescence requirement. It
+transiently acquires candidate states before validating owner-protected
+component, epoch, and age metadata, so it must not overlap allocation, send,
+receive, release, or another recovery operation.
+
+## Trace Hook
+
+`zipc_trace_set_hook()` installs an optional process-local synchronous callback.
+The fixed `zipc_trace_record_t` includes timestamp, event, buffer ID, parent ID,
+handle, pool ID, component ID, and transfer sequence. Allocate, send, receive,
+release, recover, and error paths emit records. The hook must not mutate the
+traced buffer, allocate implicitly on behalf of zIPC, block protocol progress,
+or assume a worker thread; it runs synchronously in the caller context. The hook
+is non-reentrant and must not call any zIPC API. Configure or replace it only
+while all protocol operations are externally quiesced.

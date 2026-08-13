@@ -156,7 +156,7 @@ static void run_component(unsigned int index,
         bool failed = false;
         for (unsigned int it = 0; it < iterations; ++it) {
             zipc_buffer_t buffer;
-            CHECK(zipc_buffer_alloc_ex(forward[0].sender, 0U, 0U, 0U, &buffer));
+            CHECK(zipc_buffer_alloc_ex(forward[0].sender, 0U, 0U, 0U, &buffer, NULL));
             ping_payload_t payload;
             memset(&payload, 0, sizeof(payload));
             payload.sequence = it;
@@ -403,8 +403,8 @@ int main(int argc, char **argv)
                 .receive_handle = (void *)(intptr_t)link->event_fd,
                 .ring_depth = RING_DEPTH,
             };
-            const unsigned int src = d == 0U ? edge : edge + 1U;
-            const unsigned int dst = d == 0U ? edge + 1U : edge;
+            const unsigned int src = d == 0U ? edge + 1U : edge + 2U;
+            const unsigned int dst = d == 0U ? edge + 2U : edge + 1U;
             const zipc_link_config_t sender_cfg = {
                 .pool = &pool,
                 .local_component = (zipc_component_id_t)src,

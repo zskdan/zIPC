@@ -24,6 +24,7 @@ TEST_BINS := build/tests/zipc-integration-linux build/tests/zipc-resilience-linu
              build/tests/zipc-guard-pages-linux build/tests/zipc-hardening-linux \
              build/tests/zipc-version-linux \
              build/tests/zipc-api-simplified-linux \
+             build/tests/zipc-identity-linux \
              build/tests/zipc-topology-config-linux \
              build/tests/zipc-strict-ownership-linux \
              build/tests/zipc-integration-freertos \
@@ -81,11 +82,13 @@ build/tests/zipc-topology-config-linux: $(ZIPC_LIB) tests/topology-config-linux.
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
 build/tests/zipc-strict-ownership-linux: $(ZIPC_LIB) tests/strict-ownership-linux.c | build/tests
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
+build/tests/zipc-identity-linux: $(CORE) $(LINUX_COMMON) $(LINUX_USER) tests/identity-linux.c tests/identity-test.h $(PUBLIC_HEADERS) | build/tests
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DZIPC_TESTING $(filter %.c,$^) -o $@ $(LDLIBS)
 
 build/tests/zipc-integration-freertos: $(CORE) platform/freertos/platform-freertos.c tests/stubs/freertos-stubs.c tests/integration-freertos.c $(PUBLIC_HEADERS) $(STUB_HEADERS) | build/tests
-	$(CC) -Itests/stubs $(CPPFLAGS) $(CFLAGS) $(filter %.c,$^) -o $@
+	$(CC) -Itests/stubs $(CPPFLAGS) $(CFLAGS) -DZIPC_FREERTOS_RANDOM=zipc_test_random $(filter %.c,$^) -o $@
 build/tests/zipc-integration-baremetal: $(CORE) platform/baremetal/platform-baremetal.c tests/stubs/baremetal-stubs.c tests/integration-baremetal.c $(PUBLIC_HEADERS) $(STUB_HEADERS) | build/tests
-	$(CC) -Itests/stubs $(CPPFLAGS) $(CFLAGS) $(filter %.c,$^) -o $@
+	$(CC) -Itests/stubs $(CPPFLAGS) $(CFLAGS) -DZIPC_BAREMETAL_RANDOM=zipc_test_random $(filter %.c,$^) -o $@
 
 build/utilities/%: $(ZIPC_LIB) utilities/%.c | build/utilities
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
@@ -122,9 +125,11 @@ test: all
 	./build/tests/zipc-hardening-linux
 	./build/tests/zipc-version-linux
 	./build/tests/zipc-api-simplified-linux
+	./build/tests/zipc-identity-linux
 	./build/tests/zipc-topology-config-linux
 	./build/tests/zipc-strict-ownership-linux
 	./build/examples/zipc-shared-buffer-chain
+	./build/examples/zipc-shared-buffer-chain --config examples/shared-buffer-chain/zipc.conf
 	./build/tests/zipc-integration-freertos
 	./build/tests/zipc-integration-baremetal
 	./build/examples/zipc-ready-linux5

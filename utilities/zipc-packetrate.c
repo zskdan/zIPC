@@ -41,7 +41,7 @@ static uint64_t now_ns(void)
 static void buffer_get_wait(zipc_link_t *sender, zipc_buffer_t *buffer)
 {
     for (;;) {
-        const zipc_status_t status = zipc_buffer_alloc_ex(sender, 0U, 0U, 0U, buffer);
+        const zipc_status_t status = zipc_buffer_alloc_ex(sender, 0U, 0U, 0U, buffer, NULL);
         if (status == ZIPC_OK)
             return;
         if (status != ZIPC_ERR_NO_BUFFER) {
@@ -113,11 +113,13 @@ int main(int argc, char **argv)
     CHECK(zipc_platform_memory_open(&memory, &memory_cfg));
 
     zipc_pool_t pool;
+    const size_t control_size = zipc_pool_required_control_size(SLOT_COUNT);
+    const size_t payload_offset = (control_size + 63U) & ~(size_t)63U;
     const zipc_pool_config_t pool_cfg = {
         .control_memory = memory,
         .payload_memory = NULL,
         .control_offset = 0U,
-        .payload_offset = 64U * 1024U,
+        .payload_offset = payload_offset,
         .slot_count = SLOT_COUNT,
         .slot_capacity = SLOT_SIZE,
         .slot_stride = SLOT_SIZE,
@@ -185,12 +187,12 @@ int main(int argc, char **argv)
     const zipc_link_config_t receiver_cfg = {
         .pool = &pool,
         .local_component = 1U,
-        .remote_component = 0U,
+        .remote_component = 2U,
         .transport = receiver_transport,
     };
     const zipc_link_config_t sender_cfg = {
         .pool = &pool,
-        .local_component = 0U,
+        .local_component = 2U,
         .remote_component = 1U,
         .transport = sender_transport,
     };

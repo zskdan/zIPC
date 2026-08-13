@@ -29,13 +29,17 @@ int main(void)
     CHECK_OK(zipc_platform_memory_open(&cm,&cc)); CHECK_OK(zipc_platform_memory_open(&dm,&dc));
     zipc_pool_config_t pc={.control_memory=cm,.payload_memory=dm,.slot_count=slots,.slot_capacity=CAP,.payload_alignment=4096U,.flags=ZIPC_POOL_F_STRICT_OWNERSHIP,.pool_id=9U};
     CHECK_OK(zipc_pool_format(&pc)); zipc_pool_t pool; CHECK_OK(zipc_pool_attach(&pool,&pc));
+    zipc_buffer_t low_level; CHECK_OK(zipc_buffer_allocate(&pool,1U,0U,&low_level));
+    uint8_t *low_level_data=zipc_buffer_data(&low_level); low_level_data[0]=0xa5;
+    if(low_level_data[0]!=0xa5){ fprintf(stderr,"low-level allocation payload inaccessible\n"); return 1; }
+    CHECK_OK(zipc_pool_buffer_release(&pool,zipc_buffer_handle(&low_level),1U));
     size_t rb=zipc_transport_spsc_ring_size(depth); zipc_transport_spsc_ring_t *ring=calloc(1U,rb); if(!ring) return 1;
     CHECK_OK(zipc_transport_spsc_ring_initialize(ring,depth));
     zipc_platform_transport_config_t tc={.type=ZIPC_TRANSPORT_SHM_RING_POLLING,.platform_handle=ring,.ring_depth=depth,.poll_timeout_ns=1000000U};
     zipc_link_config_t txc={.pool=&pool,.local_component=1U,.remote_component=2U,.transport=tc};
     zipc_link_config_t rxc={.pool=&pool,.local_component=2U,.remote_component=1U,.transport=tc};
     zipc_link_t *tx=NULL,*rx=NULL; CHECK_OK(zipc_link_create(&tx,&txc)); CHECK_OK(zipc_link_create(&rx,&rxc));
-    zipc_buffer_t b; CHECK_OK(zipc_buffer_alloc(tx,16U,&b));
+    zipc_buffer_t b; CHECK_OK(zipc_buffer_alloc(tx,16U,&b,NULL));
     uint8_t *retained=zipc_buffer_data(&b); retained[0]=0x5a;
     CHECK_OK(zipc_send(tx,&b));
     if(expect_fault(retained)!=0){ fprintf(stderr,"retained pointer remained writable after send\n"); return 1; }
@@ -44,5 +48,5 @@ int main(void)
     uint8_t *released=zipc_buffer_data(&b); CHECK_OK(zipc_buffer_release(&b));
     if(expect_fault(released)!=0){ fprintf(stderr,"released pointer remained writable\n"); return 1; }
     zipc_link_destroy(rx); zipc_link_destroy(tx); free(ring); zipc_platform_memory_close(dm); zipc_platform_memory_close(cm);
-    puts("PASS: strict ownership revokes retained payload pointers"); return 0;
+    puts("PASS: strict ownership enables low-level allocation and revokes retained payload pointers"); return 0;
 }

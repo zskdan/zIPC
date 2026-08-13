@@ -1,22 +1,23 @@
-# zIPC v0.1.11
+# zIPC v0.2.0
 
 zIPC is an experimental chained zero-copy IPC protocol. A component allocates
 a fixed slot from a shared pool, processes the payload in place, and transfers
 only a generation-protected slot handle to the next component. Exactly one
 component owns a slot at a time. Loops are supported: `hop_count` records total
-processing passes and `visited_mask` records distinct components.
+processing passes and an exact 256-bit visited set records distinct components.
 
-**Status:** resilience-focused prototype. v0.1 is not ABI-stable or production-ready.
+**Status:** experimental v0.2 prototype. The public API and shared-memory ABI
+are not stable before v1.0, and this release is not production-ready.
 
 
 
-## Application API (v0.1.11)
+## Application API (v0.2.0)
 
 The normal application path is intentionally small:
 
 ```c
 zipc_link_open(&link, "ab");
-zipc_buffer_alloc(link, size, &buffer);
+zipc_buffer_alloc(link, size, &buffer, NULL); /* root */
 zipc_send(link, &buffer);        /* ownership transfer; buffer invalid afterward */
 zipc_recv(link, &buffer);
 zipc_buffer_release(&buffer);    /* buffer invalid afterward */
@@ -27,11 +28,25 @@ zipc_buffer_release(&buffer);    /* buffer invalid afterward */
 See [`docs/API.md`](docs/API.md), [`docs/NNG-MIGRATION.md`](docs/NNG-MIGRATION.md),
 and [`examples/shared-buffer-chain/`](examples/shared-buffer-chain/).
 
-## What is new in v0.1
+## What is new in v0.2.0
+
+- Immutable buffer identity and direct parent lineage in pool ABI 2.
+- A 1..254 component namespace with an exact 256-bit visited set.
+- Secure platform entropy and a concurrent 32-bit-atomic identity generator.
+- Fixed buffer-aware trace records and an optional synchronous hook.
+- Publication-aware transport failures that consume sender ownership when a
+  descriptor is already visible but its notification fails.
+- Fully quiesced recovery of all abandoned transient `CLAIMING` slots.
+- A->B->C->D root/children lineage example.
+
+## v0.1 Foundation
 
 - Component epochs, heartbeats, unregister/restart detection, and explicit orphan-slot recovery.
 - Per-buffer hop limits and absolute deadlines to bound chains with loops.
-- Timeout-oriented `zipc_send_timeout()` and `zipc_receive_timeout()` entry points; the current v0.1 fallback uses backend-configured blocking semantics where a transport has no native timed operation.
+- Timeout-oriented `zipc_send_timeout()` and `zipc_receive_timeout()` entry
+  points retain compatibility signatures in ABI 2. Their per-call argument
+  does not override the timeout fixed when the backend was opened and is not a
+  portable duration contract.
 - Fixed-depth per-slot trace history for allocation, send, receive, release, and recovery.
 - `zipc-stat` for pool counters, component lifecycle state, active slots, ages, and trace entries.
 - A release roadmap from v0.1 through v1.0 in [`docs/ROADMAP.md`](docs/ROADMAP.md).
@@ -40,11 +55,17 @@ and [`examples/shared-buffer-chain/`](examples/shared-buffer-chain/).
 
 - Handle: `{generation, slot_id}` to reject stale references.
 - Atomic synchronization: only authoritative slot state and pool-wide counters.
+- Publication: allocation and receive initialize under transient `CLAIMING` and
+  publish `OWNED` only after metadata and the local view are complete.
 - Optional split memory: atomic-capable control memory plus independent payload
   memory, including uncached PL BRAM.
 - Payload region: offset and length support prepend and append without copying
   the whole buffer.
 - Per-link transport selection: every hop can use a different backend.
+- Send publication errors: `ZIPC_ERR_TRANSPORT` means no descriptor became
+  visible and sender ownership was rolled back. `ZIPC_ERR_TRANSPORT_PUBLISHED`
+  means the descriptor is visible, the local buffer is invalid, and the slot
+  remains `TRANSFER` even though notification failed.
 
 ## Source layout
 
@@ -71,7 +92,7 @@ Normal applications use named directional links and opaque buffers:
 
 ```c
 zipc_link_open(&producer, "ab");
-zipc_buffer_alloc(producer, payload_size, &buffer);
+zipc_buffer_alloc(producer, payload_size, &buffer, NULL);
 memcpy(zipc_buffer_data(&buffer), payload, payload_size);
 zipc_send(producer, &buffer);          /* consumes buffer */
 
@@ -89,6 +110,7 @@ Main application API:
 - `zipc_buffer_release()`
 - `zipc_send_copy()` / `zipc_recv_copy()` for first-stage migration
 - `zipc_buffer_data()` / `zipc_buffer_size()`
+- `zipc_buffer_id()` / `zipc_buffer_parent_id()`
 - `zipc_buffer_at()` for checked absolute fixed-offset access
 - `zipc_buffer_headroom()` / `zipc_buffer_tailroom()`
 - append/prepend/trim helpers
@@ -123,10 +145,28 @@ uses two links or a bidirectional transport configured as two logical links.
 - `ZIPC_SHM_XEN_STATIC`
 - `ZIPC_SHM_PREALLOCATED` — caller-owned static array, linker section, OCRAM/TCM, or BSP-provided memory
 
-Pool ABI 1 `control_memory` must advertise CPU read/write plus 32-bit and
+Pool ABI 2 `control_memory` must advertise CPU read/write plus 32-bit and
 64-bit atomic capability because its shared header and component table actively
 use both `_Atomic uint32_t` and `_Atomic uint64_t` fields.
 `payload_memory` may be separate and does not need atomic support.
+
+## Buffer Identity
+
+Every successful public allocation receives one immutable `zipc_buffer_id_t`:
+
+```text
+bits 63..56  allocator component (1..254)
+bits 55..32  random nonzero 24-bit runtime session
+bits 31..0   32-bit allocation sequence
+```
+
+`zipc_buffer_alloc(..., NULL)` creates a root with parent ID zero. Passing a
+valid owned parent records its ID without modifying or consuming the parent;
+the parent may belong to another pool. Relaying a slot preserves both IDs.
+The process-local generator is shared by all links using the same local
+component ID and requires secure platform entropy when a session starts or
+rotates. Issuance joins a 32-bit atomic active set; rotation blocks new issuers
+and drains that set before changing session and resetting sequence.
 
 ### Optional Linux guard pages
 
@@ -263,6 +303,9 @@ make integration-targets
 - `tests/integration-baremetal.c` validates DT-reserved-memory mapping, the callback-driven IPI transport, component epochs, slot transfer, and the high-level link/buffer API.
 
 The stubs under `tests/stubs/` provide only enough FreeRTOS/OpenAMP behavior for host regression. Target validation still requires the actual FreeRTOS BSP, OpenAMP stack, cache policy, IPI driver, and hardware memory map.
+
+No target hardware validation was performed for v0.2.0; all release validation
+reported for this worktree is Linux-host testing or host-stub integration.
 
 ### Polling event backend
 

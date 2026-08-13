@@ -12,6 +12,7 @@ static const char *state_name(uint32_t state)
 {
     switch (state) {
     case ZIPC_SLOT_FREE: return "FREE";
+    case ZIPC_SLOT_CLAIMING: return "CLAIMING";
     case ZIPC_SLOT_OWNED: return "OWNED";
     case ZIPC_SLOT_TRANSFER: return "TRANSFER";
     case ZIPC_SLOT_ERROR: return "ERROR";
@@ -133,7 +134,8 @@ int main(int argc, char **argv)
         const uint64_t age = now >= slot->acquired_ns ? now - slot->acquired_ns : 0U;
         printf("slot=%u state=%s owner=%u epoch=%u gen=%u hops=%u/%u len=%u age_ns=%" PRIu64 " recoveries=%u\n",
                i, state_name(state), slot->owner_id, slot->owner_epoch,
-               slot->generation, slot->hop_count, slot->hop_limit,
+               atomic_load_explicit(&slot->generation, memory_order_relaxed),
+               slot->hop_count, slot->hop_limit,
                slot->region.length, age, slot->recovery_count);
         zipc_trace_entry_t trace[ZIPC_TRACE_DEPTH];
         const uint32_t count = zipc_slot_trace_copy(slot, trace, ZIPC_TRACE_DEPTH);
@@ -144,7 +146,7 @@ int main(int argc, char **argv)
     }
 
     puts("components:");
-    for (uint32_t i = 0; i < ZIPC_MAX_COMPONENTS; ++i) {
+    for (uint32_t i = ZIPC_COMPONENT_ID_MIN; i <= ZIPC_COMPONENT_ID_MAX; ++i) {
         zipc_component_snapshot_t snapshot;
         (void)zipc_component_snapshot(&pool, (zipc_component_id_t)i, &snapshot);
         if (snapshot.epoch == 0U && !snapshot.active && snapshot.recovered_slots == 0U) continue;

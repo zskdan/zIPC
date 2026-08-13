@@ -1,36 +1,31 @@
-# Codex handoff — zIPC v0.1.11
+# Codex handoff — zIPC v0.2.0
 
 ## Objective
 
-Continue development of zIPC from the supplied v0.1.11 repository. This file
-captures the design context and implementation expectations that were developed
-before the repository was handed to Codex.
+Continue development from the focused v0.2.0 buffer-identity milestone.
 
 ## Current release
 
-- Version: `0.1.11`
-- Pool ABI: `1`
+- Version: `0.2.0`
+- Pool ABI: `2`
 - Status: experimental prototype; public API and shared-memory ABI are not stable.
-- Immediate instruction: inspect and validate v0.1.11 before implementing v0.2.
+- Scope: buffer identity/correlation lineage plus required namespace, visited
+  set, entropy, ABI, and trace support.
 
-Recommended first task:
-
-```text
-Read AGENTS.md, docs/CODEX-HANDOFF.md, docs/ARCHITECTURE.md,
-docs/DECISIONS.md, docs/ROADMAP.md, README.md, and CHANGELOG.md.
-Run the complete test suite. Report mismatches between code and documentation.
-Do not implement v0.2 until the review is complete.
-```
+Recommended first task: read the authoritative repository documents, run the
+complete test suite, and report code/documentation mismatches before extending
+the protocol.
 
 ## Completed functionality
 
 ### Core protocol
 
 - Fixed shared-memory slots.
+- Transient `CLAIMING` publication state for fully initialized ownership views.
 - Generation-protected 64-bit handles.
 - Exclusive ownership.
 - Append, prepend, and trim helpers.
-- Loop support through `hop_count` and `visited_mask`.
+- Loop support through `hop_count` and the exact visited set.
 - Per-transfer sequence tracking.
 - Separate control and payload memory.
 - Relaxed atomic allocation cursor plus atomic slot claim.
@@ -85,7 +80,7 @@ Do not implement v0.2 until the review is complete.
 - The allocation cursor is a hint, not the allocation operation.
 - No pool-wide lock is required for normal fixed-slot operations.
 - Pool format/reset/shutdown requires external serialization.
-- Pool ABI 1 control memory must support CPU read/write plus 32-bit and 64-bit
+- Pool ABI 2 control memory must support CPU read/write plus 32-bit and 64-bit
   atomics.
 - PL BRAM is payload-only unless atomics are proven.
 - Barriers do not replace cache maintenance.
@@ -95,13 +90,12 @@ Do not implement v0.2 until the review is complete.
 
 ## Known limitations
 
-- Timeout behavior is not uniform across transports. ABI-1 timeout entry points
-  cannot override the timeout fixed when a backend is opened; the per-call
-  argument has no portable duration semantics.
-- A transport send failure does not report whether descriptor publication
-  occurred. The existing rollback is safe only for failures known by the
-  backend to be pre-publication; publication-state/acknowledgement is a v0.2
-  transport-contract blocker.
+- Timeout behavior is not uniform across transports. ABI 2 compatibility
+  timeout entry points cannot override the timeout fixed when a backend is
+  opened; the per-call argument has no portable duration semantics.
+- Transport sends distinguish safe pre-publication failure from
+  `ZIPC_ERR_TRANSPORT_PUBLISHED`. The latter consumes sender ownership and
+  leaves the slot in `TRANSFER` after a notification/event error.
 - FreeRTOS task notification and basic IPI mailbox paths are depth one unless
   paired with a ring or queue.
 - Linux cached/uncached `/dev/mem` mappings are prototype behavior.
@@ -131,7 +125,7 @@ Do not implement v0.2 until the review is complete.
 
 ### Link identity and cookie
 
-Planned v0.2:
+Deferred beyond v0.2.0:
 
 ```c
 typedef uint64_t zipc_link_id_t;
@@ -151,7 +145,7 @@ typedef uintptr_t zipc_cookie_t;
 
 ### QoS
 
-v0.2 should define, but not fully enforce, a common link QoS model:
+Post-v0.2.0 work should define, but not fully enforce, a common link QoS model:
 
 - best effort, reliable, low latency, high throughput, real-time classes;
 - priority and traffic class;
@@ -164,7 +158,7 @@ Transport-specific validation/enforcement begins in v0.4 and expands later.
 
 ### Async and callbacks
 
-v0.2 defines the API contract and ownership semantics:
+Post-v0.2.0 work defines the API contract and ownership semantics:
 
 - request IDs;
 - request cookies;
@@ -197,35 +191,30 @@ transport setup, memory-layout agreement, cache policy, and QoS compatibility.
 
 ### Doxygen
 
-v0.2 must add:
+`Doxyfile` and `make docs` exist. New v0.2.0 public APIs are documented; a
+complete audit of unrelated pre-existing APIs and generated example pages is
+deferred.
 
-- complete public API Doxygen comments;
-- examples as generated documentation pages;
-- architecture/state-machine documentation;
-- `Doxyfile`;
-- `make docs` generating `build/docs/html/index.html`.
+## v0.2.0 identity scope
 
-## v0.2 intended scope
+- Buffer IDs pack allocator component, random runtime session, and sequence.
+- Parent ID records direct immutable allocation lineage; zero denotes a root.
+- One process-global generator table is shared by links with the same component.
+- Sequence zero through `UINT32_MAX - 1` are used; the max value rotates session
+  after a 32-bit atomic active-issuer gate drains.
+- Fork is not automatically detected or reseeded.
+- ABI 2 uses a 256-entry component table and exact eight-word visited set.
+- Existing shared atomic64 counters remain, so control memory still requires
+  atomic32 and atomic64. The local generator only requires atomic32.
+- Fixed trace records cover allocate/send/receive/release/recover/error.
+- Abandoned `CLAIMING` recovery requires full pool quiescence, reclaims every
+  remaining claim without age/component attribution, and is retryable after
+  protection failure.
+- No target hardware validation was performed for v0.2.0; target adapter runs
+  use Linux-host stubs/simulation only.
 
-The next milestone should focus on protocol identity and semantics, not yet on
-advanced buffer chaining or complete asynchronous execution.
-
-Deliverables:
-
-1. stable-in-release link ID and local cookie fields/accessors;
-2. correlation ID and optional flow ID;
-3. payload type, protocol flags, access intent, priority, traffic class;
-4. optional CRC/integrity metadata;
-5. required/supported feature masks and negotiation rules;
-6. initial QoS structures and validation rules;
-7. async public type/API contract with precise ownership documentation;
-8. full Doxygen API and example documentation;
-9. tests for new metadata, compatibility, and validation;
-10. version/changelog/manifest/documentation updates.
-
-Do not silently add full scatter-gather, multi-slot payloads, a worker-thread
-async engine, or automated peer readiness into v0.2; those belong to later
-roadmap milestones unless explicitly reprioritized.
+QoS, async, CRC, flow/request IDs, link identity, readiness, and advanced
+buffer models are deferred to v0.2.1+ or later roadmap milestones.
 
 ## Release discipline
 

@@ -6,9 +6,12 @@ component, or being transferred to one next owner.
 ## API enforcement
 
 `zipc_buffer_t` is opaque. Successful send/release invalidates the local object,
-so use-after-send, double-send, use-after-release, and double-release are caught
-through the public API. Generation counters reject stale handles after slot
-reuse.
+as does `ZIPC_ERR_TRANSPORT_PUBLISHED`: the send reported an error, but its
+descriptor was already visible and sender ownership is consumed. Ordinary
+`ZIPC_ERR_TRANSPORT` is pre-publication, so send rolls back and leaves the local
+buffer valid. These rules catch use-after-send, double-send, use-after-release,
+and double-release through the public API. Generation counters reject stale
+handles after slot reuse.
 
 A retained raw pointer returned earlier by `zipc_buffer_data()` is different: in
 normal mode it can still address the shared mapping after ownership transfer.
@@ -28,6 +31,14 @@ slots are `PROT_NONE` while the local process does not own them. Allocation or
 receive changes the owned slot to read/write; send or release revokes it again.
 Consequently a retained pointer used after send/release faults with SIGSEGV or
 SIGBUS.
+
+Protection changes complete before ownership state publication: release and
+recovery revoke access before `FREE`, and low-level
+`zipc_buffer_prepare_transfer()` revokes access before publishing `TRANSFER`.
+Low-level and high-level allocation enable access before publishing `OWNED`,
+while unpublished-send rollback restores access before `OWNED`. Failed
+restoration does not return apparent ownership; the local buffer is invalidated
+and administrative `CLAIMING` recovery is required.
 
 Requirements:
 

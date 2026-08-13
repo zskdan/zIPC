@@ -4,7 +4,7 @@
 #include <zipc/zipc.h>
 
 enum zipc_universal_component {
-    ZIPC_COMP_R5_0_TASK1 = 0,
+    ZIPC_COMP_R5_0_TASK1 = 1,
     ZIPC_COMP_R5_0_TASK2,
     ZIPC_COMP_LINUX_USER1,
     ZIPC_COMP_LINUX_USER2,

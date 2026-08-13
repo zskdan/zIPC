@@ -10,9 +10,23 @@ multi-reader ownership or reference-counted fan-out.
 
 ## D002 — Atomic state, owner-protected metadata
 
-Only authoritative shared state transitions and shared counters are atomic.
+Authoritative shared state transitions, stale-handle generation, and shared
+counters are atomic.
 Fields written exclusively by the owner are non-atomic and published through
-release/acquire state changes.
+release/acquire state changes. ABI 2 allocation uses `FREE -> CLAIMING`, and
+receive uses `TRANSFER -> CLAIMING`; both complete metadata and local-view
+construction before publishing `OWNED` with release. Recovery ignores
+`CLAIMING`, and failed claim construction frees directly without pretending an
+`OWNED -> FREE` release occurred. Send similarly acquires
+`OWNED -> CLAIMING`, validates and writes transfer metadata while exclusive,
+revokes strict payload access, and publishes `TRANSFER` only after tracing.
+
+Abandoned `CLAIMING` slots use a separate recovery API. The caller must first
+externally quiesce every pool protocol operation because a crash can occur
+immediately after the state CAS, before timestamp or claimant metadata exists.
+Under full quiescence all remaining claims are abandoned. Recovery ignores
+`acquired_ns` and partial component metadata, attributes no component counter,
+and restores `CLAIMING` for retry if payload protection fails.
 
 ## D003 — Allocation cursor is advisory
 
@@ -33,7 +47,7 @@ atomic-capable. Payload memory may be PL BRAM or another non-atomic region.
 ## D006 — Loops remain supported
 
 `hop_count` is retained because a component may process the same buffer more
-than once. `visited_mask` represents distinct components and is not a substitute
+than once. The exact visited set represents distinct components and is not a substitute
 for `hop_count`.
 
 ## D007 — Generation-protected handles
@@ -62,9 +76,13 @@ mapping or cache operations externally.
 Component ID identifies a logical component. Epoch identifies one runtime
 instance. Recovery must match both component ID and epoch.
 
+Owner and abandoned-claim recovery are administrative operations and require
+pool-wide protocol quiescence. Recovery must not probe live transfers while a
+receiver can consume their only descriptor notification.
+
 ## D012 — Link ID and cookie are different
 
-Planned v0.2 model:
+Deferred post-v0.2.0 model:
 
 - `link_id`: stable logical link identity, agreed by both sides;
 - `cookie`: application-owned local opaque value, never transported.
@@ -73,14 +91,15 @@ A pointer cookie is valid only inside its own address space.
 
 ## D013 — Message identity is independent from storage identity
 
-Planned `correlation_id` identifies an end-to-end logical message. It is not the
-slot handle, generation, transfer sequence, or link ID.
+Pool ABI 2 `buffer_id` identifies one allocated buffer storage lifetime and
+`parent_id` records direct creation lineage. These are not a request/reply
+correlation ID, slot handle, generation, transfer sequence, or link ID.
 
 ## D014 — QoS is a link contract
 
 QoS configuration belongs to the logical link and may include class, priority,
 queue depth, maximum inflight operations, latency target, deadline, and drop
-policy. v0.2 defines the model; v0.4 begins enforcement.
+policy. This model is deferred beyond v0.2.0; v0.4 begins enforcement.
 
 ## D015 — Preserve synchronous and asynchronous APIs
 
@@ -119,15 +138,15 @@ IPI hardware, interrupt latency, or the target memory map.
 
 Use the canonical three-role model: payload backend, descriptor backend, and event backend. See `docs/BACKENDS.md`.
 
-## D020 — ABI-1 descriptor publication rollback is transport-limited
+## D020 — Descriptor publication determines send ownership
 
-The v0.1 transport send API returns only success/failure and has no publication
-or cancellation state. The core may roll a slot from `TRANSFER` back to `OWNED`
-when send reports failure, but it cannot prove that a failing backend did not
-already publish the descriptor. Correcting this ambiguity requires a transport
-contract that distinguishes pre-publication failure from published/ambiguous
-failure (or provides acknowledgement/cancellation). It is a v0.2 blocker and
-must not be addressed by speculative ABI-1 ownership rollback changes.
+`ZIPC_ERR_TRANSPORT` is reserved for failures known to occur before descriptor
+visibility, and permits `TRANSFER -> OWNED` sender rollback.
+`ZIPC_ERR_TRANSPORT_PUBLISHED` reports an error after descriptor publication;
+the core returns the error but consumes sender ownership and leaves the slot in
+`TRANSFER`. Ring/mailbox plus event paths use this status when the event fails.
+An integrated operation whose callback cannot distinguish its failure point is
+classified conservatively as published once publication may have occurred.
 
 ## Buffer ownership protection
 
@@ -158,3 +177,39 @@ must not be addressed by speculative ABI-1 ownership rollback changes.
 - Named link opening is backed by a process-local static topology registry; explicit `zipc_link_create()` remains the expert API.
 - Guard pages detect linear slot overrun. Strict ownership is a separate optional Linux protection mode that revokes non-owned slot mappings with `mprotect()`.
 - Copy helpers exist specifically to reduce first-stage NNG migration friction; zero-copy buffer ownership remains the preferred high-performance model.
+
+## D021 — Buffer identity layout and lifetime
+
+- `zipc_buffer_id_t` is packed numerically as allocator:8, session:24,
+  sequence:32; C bitfields are prohibited.
+- Full zero means no parent/root. Usable allocator IDs are 1..254.
+- Identity and parent are immutable slot-control fields for one allocation
+  lifetime. Descriptors continue to reference the authoritative slot.
+- All links with one local component ID share one process-global generator.
+- The generator uses only 32-bit atomics and secure platform entropy. It does
+  not automatically reseed across `fork()`.
+- Issuers join an active count and recheck the stable session before reserving a
+  sequence. A rotator first blocks entrants, then waits for active issuers to
+  drain before changing session and resetting sequence.
+
+## D022 — Exact visited set
+
+The 256-entry component namespace uses eight owner-protected non-atomic
+`uint32_t` words. Reserved bits 0 and 255 are never set. Topology link capacity
+remains independently fixed at 64.
+
+## D023 — ABI 2 atomic baseline
+
+Identity generation itself requires only 32-bit atomics. Pool ABI 2 retains the
+ABI-1 shared `_Atomic uint64_t` counters and lifecycle timestamps because
+replacing them cleanly is outside the identity-only milestone. Control memory
+therefore still requires both atomic32 and atomic64; correctness is not weakened.
+
+## D024 — Native trace seam
+
+The fixed trace hook is optional, synchronous, non-reentrant, allocation-free in
+core, and runs in caller context. It must not call zIPC or block protocol
+progress; hook configuration is externally serialized with protocol calls.
+Slot history is written only by a validated owner.
+Owner-unsafe errors may emit an external record with zero identity and invalid
+handle without touching slot metadata.

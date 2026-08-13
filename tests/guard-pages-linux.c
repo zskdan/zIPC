@@ -105,7 +105,7 @@ int main(void)
     }
 
     zipc_buffer_t buffer;
-    if (zipc_buffer_allocate(&pool, 1U, &buffer) != ZIPC_OK) {
+    if (zipc_buffer_allocate(&pool, 1U, 0U, &buffer) != ZIPC_OK) {
         fprintf(stderr, "guard-pages: allocation failed\n");
         goto fail;
     }

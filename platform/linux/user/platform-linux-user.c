@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/random.h>
 #include <sys/un.h>
 #include <unistd.h>
 #include <time.h>
@@ -663,8 +664,9 @@ zipc_status_t zipc_platform_transport_send(
     if (transport->type == ZIPC_TRANSPORT_FIFO) {
         const ssize_t sent = write(transport->handle.fd, message,
                                    sizeof(*message));
-        return sent == (ssize_t)sizeof(*message)
-             ? ZIPC_OK : ZIPC_ERR_TRANSPORT;
+        if (sent == (ssize_t)sizeof(*message))
+            return ZIPC_OK;
+        return sent > 0 ? ZIPC_ERR_TRANSPORT_PUBLISHED : ZIPC_ERR_TRANSPORT;
     }
 
     if (transport->type == ZIPC_TRANSPORT_SHM_RING_EVENTFD) {
@@ -675,7 +677,7 @@ zipc_status_t zipc_platform_transport_send(
         const uint64_t one = 1U;
         return write(transport->handle.ring_eventfd.event_fd,
                      &one, sizeof(one)) == (ssize_t)sizeof(one)
-             ? ZIPC_OK : ZIPC_ERR_TRANSPORT;
+             ? ZIPC_OK : ZIPC_ERR_TRANSPORT_PUBLISHED;
     }
 
     if (transport->type == ZIPC_TRANSPORT_SHM_RING_POLLING)
@@ -685,13 +687,16 @@ zipc_status_t zipc_platform_transport_send(
     if (transport->type == ZIPC_TRANSPORT_RPMSG) {
         const ssize_t sent = write(transport->handle.fd, message,
                                    sizeof(*message));
-        return sent == (ssize_t)sizeof(*message)
-             ? ZIPC_OK : ZIPC_ERR_TRANSPORT;
+        if (sent == (ssize_t)sizeof(*message))
+            return ZIPC_OK;
+        return sent > 0 ? ZIPC_ERR_TRANSPORT_PUBLISHED : ZIPC_ERR_TRANSPORT;
     }
 
     if (transport->type == ZIPC_TRANSPORT_IPI) {
         *transport->handle.ipi.mailbox = *message;
-        return transport->handle.ipi.send(transport->handle.ipi.context);
+        zipc_status_t status = transport->handle.ipi.send(
+            transport->handle.ipi.context);
+        return status == ZIPC_OK ? ZIPC_OK : ZIPC_ERR_TRANSPORT_PUBLISHED;
     }
 
     if (transport->type == ZIPC_TRANSPORT_PL_RING_IRQ) {
@@ -699,8 +704,9 @@ zipc_status_t zipc_platform_transport_send(
             transport->handle.pl_ring_irq.ring, message);
         if (status != ZIPC_OK)
             return status;
-        return transport->handle.pl_ring_irq.send(
+        status = transport->handle.pl_ring_irq.send(
             transport->handle.pl_ring_irq.context);
+        return status == ZIPC_OK ? ZIPC_OK : ZIPC_ERR_TRANSPORT_PUBLISHED;
     }
 
     if (transport->type == ZIPC_TRANSPORT_SMC ||
@@ -712,7 +718,7 @@ zipc_status_t zipc_platform_transport_send(
             &transport->handle.secure.response);
         if (status == ZIPC_OK)
             transport->handle.secure.response_pending = true;
-        return status;
+        return status == ZIPC_OK ? ZIPC_OK : ZIPC_ERR_TRANSPORT_PUBLISHED;
     }
 
     if (transport->type == ZIPC_TRANSPORT_UNIX_DGRAM) {
@@ -912,4 +918,24 @@ uint64_t zipc_platform_time_ns(void)
     if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
         return 0U;
     return (uint64_t)ts.tv_sec * UINT64_C(1000000000) + (uint64_t)ts.tv_nsec;
+}
+
+zipc_status_t zipc_platform_random(void *buffer, size_t length)
+{
+    if (buffer == NULL && length != 0U)
+        return ZIPC_ERR_INVALID_ARGUMENT;
+    uint8_t *next = buffer;
+    while (length != 0U) {
+        const ssize_t count = getrandom(next, length, 0);
+        if (count < 0) {
+            if (errno == EINTR)
+                continue;
+            return ZIPC_ERR_ENTROPY_UNAVAILABLE;
+        }
+        if (count == 0)
+            return ZIPC_ERR_ENTROPY_UNAVAILABLE;
+        next += (size_t)count;
+        length -= (size_t)count;
+    }
+    return ZIPC_OK;
 }

@@ -32,7 +32,7 @@ int main(void)
     CHECK(zipc_component_heartbeat(&pool, 1U, epoch) == ZIPC_OK);
 
     zipc_buffer_t buffer;
-    CHECK(zipc_buffer_allocate(&pool, 1U, &buffer) == ZIPC_OK);
+    CHECK(zipc_buffer_allocate(&pool, 1U, 0U, &buffer) == ZIPC_OK);
     CHECK(zipc_buffer_owner_epoch(&buffer) == epoch);
     CHECK(zipc_buffer_set_limits(&buffer, 1U, 0U) == ZIPC_OK);
     zipc_message_t message;
@@ -43,11 +43,37 @@ int main(void)
     zipc_trace_entry_t trace[ZIPC_TRACE_DEPTH];
     CHECK(zipc_buffer_trace_copy(&buffer, trace, ZIPC_TRACE_DEPTH) >= 2U);
 
+    zipc_buffer_t wrong_owner;
+    CHECK(zipc_buffer_allocate(&pool, 2U, 0U, &wrong_owner) == ZIPC_OK);
+    const zipc_slot_id_t wrong_owner_slot =
+        zipc_handle_slot_id(zipc_buffer_handle(&wrong_owner));
+    zipc_message_t wrong_owner_message;
+    CHECK(zipc_buffer_prepare_transfer(
+              &pool, zipc_buffer_handle(&wrong_owner), 2U, 3U,
+              &wrong_owner_message) == ZIPC_OK);
+    zipc_buffer_t newer_epoch;
+    CHECK(zipc_buffer_allocate(&pool, 1U, 0U, &newer_epoch) == ZIPC_OK);
+    const zipc_slot_id_t newer_epoch_slot =
+        zipc_handle_slot_id(zipc_buffer_handle(&newer_epoch));
+    pool.controls[newer_epoch_slot].owner_epoch = epoch + 1U;
+
     CHECK(zipc_component_unregister(&pool, 1U, epoch) == ZIPC_OK);
     zipc_recovery_result_t recovered;
     CHECK(zipc_pool_recover_owner(&pool, 1U, epoch, 0U, &recovered) == ZIPC_OK);
     CHECK(recovered.recovered_transfer == 1U);
+    CHECK(recovered.recovered_owned == 0U);
+    CHECK(recovered.skipped_newer_epoch == 1U);
     CHECK(zipc_buffer_slot_state(&buffer) == ZIPC_SLOT_FREE);
+    CHECK(atomic_load_explicit(&pool.controls[wrong_owner_slot].state,
+                               memory_order_acquire) == ZIPC_SLOT_TRANSFER);
+    CHECK(atomic_load_explicit(&pool.controls[newer_epoch_slot].state,
+                               memory_order_acquire) == ZIPC_SLOT_OWNED);
+    CHECK(zipc_buffer_claim(&pool, &wrong_owner_message, 3U, &wrong_owner) ==
+          ZIPC_OK);
+    CHECK(zipc_pool_buffer_release(&pool, zipc_buffer_handle(&wrong_owner), 3U) ==
+          ZIPC_OK);
+    CHECK(zipc_pool_buffer_release(&pool, zipc_buffer_handle(&newer_epoch), 1U) ==
+          ZIPC_OK);
 
     zipc_descriptor_backend_type_t descriptor;
     zipc_event_backend_type_t event;

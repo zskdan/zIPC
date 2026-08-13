@@ -57,6 +57,8 @@ tests/hardening-linux.c
 tests/integration-baremetal.c
 tests/integration-freertos.c
 tests/integration-linux.c
+tests/identity-linux.c
+tests/identity-test.h
 tests/resilience-linux.c
 tests/strict-ownership-linux.c
 tests/stubs/FreeRTOS.h

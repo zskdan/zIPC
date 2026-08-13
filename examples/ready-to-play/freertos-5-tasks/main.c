@@ -29,7 +29,7 @@ static void stage_task(void *argument)
     char suffix[16];
 
     if (index == 0U) {
-        check(zipc_buffer_alloc_ex(g_tx[0], 0U, 32U, 0U, &buffer));
+        check(zipc_buffer_alloc_ex(g_tx[0], 0U, 32U, 0U, &buffer, NULL));
         check(zipc_buffer_append(&buffer, "T0", 2U));
     } else {
         check(zipc_recv(g_rx[index - 1U], &buffer));
@@ -98,14 +98,14 @@ void zipc_ready_freertos_start(void)
         };
         const zipc_link_config_t tx_cfg = {
             .pool = &g_pool,
-            .local_component = (zipc_component_id_t)i,
-            .remote_component = (zipc_component_id_t)(i + 1U),
+            .local_component = (zipc_component_id_t)(i + 1U),
+            .remote_component = (zipc_component_id_t)(i + 2U),
             .transport = transport_cfg,
         };
         const zipc_link_config_t rx_cfg = {
             .pool = &g_pool,
-            .local_component = (zipc_component_id_t)(i + 1U),
-            .remote_component = (zipc_component_id_t)i,
+            .local_component = (zipc_component_id_t)(i + 2U),
+            .remote_component = (zipc_component_id_t)(i + 1U),
             .transport = transport_cfg,
         };
         check(zipc_link_create(&g_tx[i], &tx_cfg));

@@ -1,9 +1,21 @@
+#include <zipc/zipc.h>
 #include "FreeRTOS.h"
 #include "queue.h"
 #include "task.h"
 #include <openamp/open_amp.h>
 #include <stdlib.h>
 #include <string.h>
+
+zipc_status_t zipc_test_random(void *buffer, size_t length)
+{
+    static uint32_t value = UINT32_C(0x13579bdf);
+    uint8_t *bytes = buffer;
+    for (size_t i = 0U; i < length; ++i) {
+        value = value * UINT32_C(1664525) + UINT32_C(1013904223);
+        bytes[i] = (uint8_t)(value >> 24);
+    }
+    return ZIPC_OK;
+}
 
 typedef struct {
     unsigned length, item_size, head, tail, count;

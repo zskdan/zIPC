@@ -43,7 +43,7 @@ int main(void)
         },
     };
     if (zipc_link_create(&link, &link_cfg) != ZIPC_OK) return 1;
-    if (zipc_buffer_alloc_ex(link, 0U, 64U, 0U, &buffer) != ZIPC_OK) return 1;
+    if (zipc_buffer_alloc_ex(link, 0U, 64U, 0U, &buffer, NULL) != ZIPC_OK) return 1;
     if (zipc_buffer_append(&buffer, "Linux-P1", 8U) != ZIPC_OK) return 1;
     printf("Linux-P1: %.*s\n", (int)zipc_buffer_length(&buffer),
            (const char *)zipc_buffer_data(&buffer));

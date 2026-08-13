@@ -43,7 +43,7 @@ int main(void)
     zipc_link_t *tx=NULL,*rx=NULL; CHECK_OK(zipc_link_open(&tx,"ab-tx")); CHECK_OK(zipc_link_open(&rx,"ab-rx"));
 
     zipc_buffer_t b;
-    CHECK_OK(zipc_buffer_alloc(tx, 32U, &b));
+    CHECK_OK(zipc_buffer_alloc(tx, 32U, &b, NULL));
     CHECK_TRUE(zipc_buffer_is_valid(&b));
     CHECK_TRUE(zipc_buffer_size(&b) == 32U);
     memset(zipc_buffer_data(&b), 0, 32U);

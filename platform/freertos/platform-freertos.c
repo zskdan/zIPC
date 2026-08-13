@@ -17,6 +17,10 @@
 #define ZIPC_FREERTOS_PHYS_TO_VIRT(address) ((void *)(uintptr_t)(address))
 #endif
 
+#ifdef ZIPC_FREERTOS_RANDOM
+extern zipc_status_t ZIPC_FREERTOS_RANDOM(void *buffer, size_t length);
+#endif
+
 struct zipc_platform_memory {
     zipc_platform_memory_type_t type;
     void *base;
@@ -360,12 +364,17 @@ zipc_status_t zipc_platform_transport_send(
         return xTaskNotifyGiveIndexed(
                    transport->handle.task_notification.destination_task,
                    transport->handle.task_notification.notification_index) == pdPASS
-             ? ZIPC_OK : ZIPC_ERR_TRANSPORT;
+             ? ZIPC_OK : ZIPC_ERR_TRANSPORT_PUBLISHED;
 
     case ZIPC_TRANSPORT_IPI:
         *transport->handle.ipi.mailbox = *message;
         atomic_thread_fence(memory_order_release);
-        return transport->handle.ipi.send(transport->handle.ipi.context);
+        {
+            const zipc_status_t status = transport->handle.ipi.send(
+                transport->handle.ipi.context);
+            return status == ZIPC_OK ? ZIPC_OK
+                                     : ZIPC_ERR_TRANSPORT_PUBLISHED;
+        }
 
 
     case ZIPC_TRANSPORT_PL_RING_IRQ: {
@@ -380,8 +389,9 @@ zipc_status_t zipc_platform_transport_send(
         ring->entries[producer % ring->depth] = *message;
         atomic_store_explicit(&ring->producer, producer + 1U,
                               memory_order_release);
-        return transport->handle.pl_ring_irq.send(
+        const zipc_status_t status = transport->handle.pl_ring_irq.send(
             transport->handle.pl_ring_irq.context);
+        return status == ZIPC_OK ? ZIPC_OK : ZIPC_ERR_TRANSPORT_PUBLISHED;
     }
     case ZIPC_TRANSPORT_SMC:
     case ZIPC_TRANSPORT_FFA: {
@@ -392,7 +402,7 @@ zipc_status_t zipc_platform_transport_send(
             &transport->handle.secure.response);
         if (status == ZIPC_OK)
             transport->handle.secure.response_pending = true;
-        return status;
+        return status == ZIPC_OK ? ZIPC_OK : ZIPC_ERR_TRANSPORT_PUBLISHED;
     }
 
     default:
@@ -509,4 +519,17 @@ void zipc_platform_free(void *pointer)
 uint64_t zipc_platform_time_ns(void)
 {
     return (uint64_t)xTaskGetTickCount() * UINT64_C(1000000000) / (uint64_t)configTICK_RATE_HZ;
+}
+
+zipc_status_t zipc_platform_random(void *buffer, size_t length)
+{
+    if (buffer == NULL && length != 0U)
+        return ZIPC_ERR_INVALID_ARGUMENT;
+#ifdef ZIPC_FREERTOS_RANDOM
+    return ZIPC_FREERTOS_RANDOM(buffer, length);
+#else
+    (void)buffer;
+    (void)length;
+    return ZIPC_ERR_ENTROPY_UNAVAILABLE;
+#endif
 }

@@ -116,7 +116,7 @@ int main(void)
     uint32_t epoch = 0U;
     CHECK(zipc_component_register(&pool, 1U, &epoch) == ZIPC_OK);
     zipc_buffer_t buffer;
-    CHECK(zipc_buffer_allocate(&pool, 1U, &buffer) == ZIPC_OK);
+    CHECK(zipc_buffer_allocate(&pool, 1U, 0U, &buffer) == ZIPC_OK);
     zipc_recovery_result_t recovered;
     CHECK(zipc_pool_recover_owner(&pool, 1U, epoch, 0U, &recovered) ==
           ZIPC_ERR_COMPONENT_STALE);
@@ -149,7 +149,7 @@ int main(void)
     CHECK(zipc_buffer_claim(&pool, &message, 2U, &claimed) == ZIPC_OK);
     CHECK(zipc_buffer_release(&claimed) == ZIPC_OK);
 
-    CHECK(zipc_buffer_allocate(&pool, 1U, &buffer) == ZIPC_OK);
+    CHECK(zipc_buffer_allocate(&pool, 1U, 0U, &buffer) == ZIPC_OK);
     CHECK(zipc_component_unregister(&pool, 1U, epoch) == ZIPC_OK);
     CHECK(zipc_pool_recover_owner(&pool, 1U, epoch, 0U, &recovered) == ZIPC_OK);
     CHECK(recovered.recovered_owned == 1U);
@@ -181,7 +181,7 @@ int main(void)
     CHECK(zipc_link_create(&tx, &tx_config) == ZIPC_OK);
     CHECK(zipc_link_create(&rx, &rx_config) == ZIPC_OK);
 
-    CHECK(zipc_buffer_alloc(tx, 8U, &buffer) == ZIPC_OK);
+    CHECK(zipc_buffer_alloc(tx, 8U, &buffer, NULL) == ZIPC_OK);
     const zipc_slot_id_t slot_id = zipc_handle_slot_id(zipc_buffer_handle(&buffer));
     CHECK(pool.controls[slot_id].deadline_ns == ZIPC_DEADLINE_NONE);
     const zipc_handle_t sent_handle = zipc_buffer_handle(&buffer);
@@ -198,6 +198,6 @@ int main(void)
     zipc_link_destroy(tx);
     free(ring);
     zipc_platform_memory_close(memory);
-    puts("PASS: ABI-1 geometry, capabilities, epochs, recovery and errors");
+    puts("PASS: ABI-2 geometry, capabilities, epochs, recovery and errors");
     return 0;
 }

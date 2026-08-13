@@ -78,8 +78,22 @@ Event backends answer: **how does the peer know that descriptors are available?*
 | SMC / FF-A | Secure-call descriptor | Synchronous completion |
 
 The public role enums and `zipc_transport_backend_roles()` make this composition
-explicit. Existing compound transport names remain supported in v0.1.x for
+explicit. Existing compound transport names remain supported in v0.2 for
 compatibility.
+
+## Send publication contract
+
+- `ZIPC_ERR_TRANSPORT`: the descriptor was not visible; core rollback is safe.
+- `ZIPC_ERR_TRANSPORT_PUBLISHED`: the descriptor was visible before a later
+  notification, IRQ, event-channel, or callback error; rollback is unsafe.
+
+For shared ring/event paths, a full ring is an ordinary transport failure while
+a failed event after producer-index publication is a published failure. Mailbox
+signal callbacks run after mailbox publication and any callback error is
+therefore published. Synchronous SMC/FF-A callback errors cannot identify the
+visibility point and are conservatively reported as published. The core never
+converts a published failure to success: it invalidates sender ownership and
+leaves the slot in `TRANSFER` for receiver progress or explicit recovery.
 
 ## Example compositions
 
@@ -118,3 +132,13 @@ This backend is intended for dedicated cores/threads and latency-critical paths.
 It consumes CPU while idle and should not be the default for general-purpose
 Linux processes. The shared ring metadata must be mapped as Normal memory with
 working acquire/release atomics and coherent visibility between peers.
+
+## Identity Entropy
+
+Buffer identity generation is process-local core policy backed by a platform
+entropy operation. Linux userspace and hosted Xen use robust `getrandom()`
+loops; Linux kernel uses readiness-aware `get_random_bytes_wait()` and
+propagates interruption/failure. FreeRTOS and bare-metal builds
+must define `ZIPC_FREERTOS_RANDOM` or `ZIPC_BAREMETAL_RANDOM` BSP functions with
+the signature `zipc_status_t fn(void *, size_t)`. Missing hooks fail explicitly;
+there is no time or `rand()` fallback.

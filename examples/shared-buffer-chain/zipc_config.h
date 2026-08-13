@@ -6,13 +6,15 @@
 /*
  * Compiled-in topology source.  Real processes normally keep only their local
  * endpoint entries, e.g. CompB would expose "ab" and "bc".  This single-process
- * demo carries all four endpoint views so it can simulate A, B and C together.
+ * demo carries all endpoint views so it can simulate A, B, C and D together.
  */
 static const zipc_topology_link_config_t zipc_chain_links[] = {
     {.name="ab-a", .link_id=0x1001, .pool_name="main", .transport_name="ab-ring", .local_component=1, .remote_component=2},
     {.name="ab-b", .link_id=0x1002, .pool_name="main", .transport_name="ab-ring", .local_component=2, .remote_component=1},
     {.name="bc-b", .link_id=0x1003, .pool_name="main", .transport_name="bc-ring", .local_component=2, .remote_component=3},
     {.name="bc-c", .link_id=0x1004, .pool_name="main", .transport_name="bc-ring", .local_component=3, .remote_component=2},
+    {.name="cd-c", .link_id=0x1005, .pool_name="main", .transport_name="cd-ring", .local_component=3, .remote_component=4},
+    {.name="cd-d", .link_id=0x1006, .pool_name="main", .transport_name="cd-ring", .local_component=4, .remote_component=3},
 };
 
 static const zipc_topology_config_t zipc_chain_topology = {

@@ -63,11 +63,10 @@ Completed:
   observability, and strict receive-protection failure hardening.
 - Focused Linux regression coverage and synchronized release metadata.
 
-Documented limitations retained for v0.2:
+Documented limitations retained beyond v0.2.0:
 
-- ABI-1 timeout calls cannot override the timeout fixed in an opened backend.
-- Transport send failures do not distinguish unpublished from possibly
-  published descriptors, so ownership rollback remains ambiguous.
+- ABI 2 compatibility timeout calls cannot override the timeout fixed in an
+  opened backend.
 
 ## Cross-version workstream: Observability & diagnostics
 
@@ -78,7 +77,7 @@ RPMsg today is either eliminated in zIPC or made directly observable.
 - v0.1.x: trace event ABI; `link_id`/`link_cookie`; send/recv/link lifecycle
   tracepoints; ipctrace compatibility (completed baseline: per-slot trace
   entries, two-layer observability contract in ARCHITECTURE.md).
-- v0.2: `message_id`, `correlation_id`, protocol tracing, request/reply
+- v0.2.1+: `message_id`, request correlation, richer protocol tracing, request/reply
   visualization.
 - v0.3+: queue/backpressure telemetry, QoS tracing, async/callback tracing,
   backend-specific instrumentation.
@@ -98,7 +97,7 @@ scale implicitly with links, endpoints, or messages.
 - v0.1.x: document the proposed `INLINE`/`POLL`/`REACTOR` model and callback
   policies (completed in ARCHITECTURE.md); verify that the current synchronous
   Linux path creates zero internal threads.
-- v0.2: `zipc_get_fd()`/`zipc_process()` event-loop integration; async API
+- v0.2.1+: `zipc_get_fd()`/`zipc_process()` event-loop integration; async API
   without implied workers; explicit `ZIPC_CALLBACK_INLINE`/`DEFERRED`/
   `USER_EXECUTOR` policy.
 - v0.4: shared request engine, deferred completion queues, dispatcher
@@ -117,34 +116,44 @@ threads per socket, stack memory, scheduler latency. Target profile:
 ## Hardening backlog (pull into upcoming releases)
 
 - Define transport-independent duration units and native per-call timed
-  operations; ABI 1 currently uses backend-open configuration and cannot
+  operations; ABI 2 currently uses backend-open configuration and cannot
   honestly override it per call.
-- Add descriptor publication state so send failure can distinguish safe
-  rollback from published/ambiguous ownership transfer.
+- Extend publication/acknowledgement semantics for future async cancellation
+  and peer-confirmed delivery beyond the synchronous v0.2 published-error
+  distinction.
 - Harden `/dev/mem` based DT-reserved-memory mappings; production access must
   use a dedicated driver (v0.5 scope).
 - Extended soak/fault tests and sanitizer/static-analysis coverage (v0.9).
 
-## v0.2 — Protocol identity, semantics, QoS model, async contract, and documentation
+## v0.2.0 — Buffer identity and correlation lineage
 
-- Stable logical `link_id`.
-- Local application-owned link cookie.
-- End-to-end `correlation_id` and optional persistent `flow_id`.
-- `message_id` per transmitted message and `backend_cookie` mapping to the
-  concrete transport; endpoint identity.
-- Payload type, protocol flags, priority, traffic class, and access intent.
-- Optional CRC32/integrity metadata.
-- Required/supported feature masks and version negotiation.
-- Explicit protocol rejection/error semantics.
-- Initial QoS model: class, priority, depth, max inflight, latency target,
-  deadline, and drop policy.
-- Async public contract: request IDs, request cookies, completion events,
-  cancellation API, delivery states, callback contexts, and ownership rules.
-- Execution model implementation: event-loop integration, callback policies,
-  zero-thread Linux path (see cross-version workstreams).
-- Trace ABI and lifecycle/send/recv tracepoints (see observability workstream).
-- Complete Doxygen comments for public headers and examples.
-- `Doxyfile` and `make docs` producing `build/docs/html/index.html`.
+Completed scope:
+
+- Immutable buffer ID and direct parent lineage in pool ABI 2 slot control.
+- Allocator:8/session:24/sequence:32 packed identity and concurrent generator.
+- Secure platform entropy contract and explicit failure.
+- Component namespace 1..254 and exact 256-bit visited set.
+- Fixed buffer-aware trace record/hook.
+- Allocation API parent argument, lineage accessors, tests, and A->B->C->D child
+  example.
+- Kernel descriptor `pool_id` synchronization and ABI version update.
+- Publication-aware transport status and sender ownership handling.
+- Fully quiesced, metadata-independent abandoned `CLAIMING` recovery.
+
+Validation status: no target hardware validation was performed for v0.2.0;
+FreeRTOS and bare-metal results are Linux-host stub integrations.
+
+Explicitly not part of v0.2.0: QoS, async APIs/engine, CRC/integrity, payload
+typing, protocol flags, flow/request/correlation IDs, link identity/cookie,
+feature negotiation, readiness, and eBPF/exporters.
+
+## v0.2.1+ — Incremental protocol semantics
+
+Deferred v0.2 concepts will be delivered incrementally rather than treated as
+one release gate: stable link identity/local cookie; request/message/flow
+semantics; feature negotiation and rejection; payload/access metadata;
+integrity; QoS model; async ownership contract; event-loop integration; and
+richer trace/export support. Exact patch/minor allocation follows design review.
 
 ## v0.3 — Advanced buffer model
 
