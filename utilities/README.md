@@ -77,7 +77,9 @@ transport backend while the payload remains in the zIPC slot pool.
 ./build/utilities/zipc-packetrate --transport ring-eventfd \
     --packets 1000000 --payload 8
 ./build/utilities/zipc-packetrate --transport ring-eventfd \
-    --relays 3 --slots 1024 --ring-depth 1024
+    --packets 10000 --payload 64K --relays 3
+./build/utilities/zipc-packetrate --transport ring-eventfd \
+    --packets 1000 --payload 1M --relays 3
 ./build/utilities/zipc-packetrate --transport fifo --packets 100000
 ./build/utilities/zipc-packetrate --transport unix-dgram --packets 100000
 ./build/utilities/zipc-packetrate --transport mqueue --packets 100000
@@ -97,12 +99,18 @@ zero. Relays forward the same buffer without copying, and only the consumer
 releases it. Output reports end-to-end packet rate and the aggregate transfer
 rate across all `N + 1` transport hops.
 
-`--slots N` controls the shared pool's global in-flight buffer capacity and
-defaults to 256. `--ring-depth N` controls the descriptor capacity of each
-shared ring and defaults to 1024; it applies only to `ring-eventfd`. A packet
-occupies one pool slot for its entire trip through the chain, so a 256-slot pool
-cannot fill a 1024-entry ring. Increase `--slots` when measuring larger ring
-occupancies. Ring-full sends are retried as backpressure.
+`--payload` accepts decimal byte counts or `K`, `M`, and `G` binary suffixes.
+Slot capacity is derived from the payload, and slot stride is aligned to 64
+bytes. Unless `--slots` is specified, the utility selects at most 256 slots
+while targeting a 32 MiB payload pool. For example, 64 KiB, 256 KiB, and 1 MiB
+payloads select 256, 128, and 32 slots respectively. Explicit `--slots N`
+overrides this automatic selection and therefore controls the shared pool's
+global in-flight capacity.
+
+For `ring-eventfd`, each ring is internally sized to the selected slot count;
+ring depth is not an independent benchmark option. The warm-up covers up to
+1000 packets, at least one automatic pool cycle where practical, and targets
+about 64 MiB of payload writes for large payloads.
 
 
 ## zipc-stat

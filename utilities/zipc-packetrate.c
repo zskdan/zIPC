@@ -16,10 +16,11 @@
 #include <sched.h>
 #include <unistd.h>
 
-#define SLOT_COUNT 256U
-#define SLOT_SIZE 256U
-#define DEFAULT_RING_DEPTH 1024U
-#define WARMUP_PACKETS 1000U
+#define DEFAULT_SLOT_COUNT 256U
+#define PAYLOAD_ALIGNMENT 64U
+#define AUTO_POOL_BUDGET (32U * 1024U * 1024U)
+#define WARMUP_BYTE_BUDGET (64U * 1024U * 1024U)
+#define MAX_WARMUP_PACKETS 1000U
 #define MAX_RELAYS (ZIPC_COMPONENT_ID_MAX - 2U)
 
 #define CHECK(expr) do { \
@@ -81,30 +82,65 @@ static bool parse_u32(const char *text, uint32_t maximum, uint32_t *value)
     return true;
 }
 
+static bool parse_size_u32(const char *text, uint32_t *value)
+{
+    if (text == NULL || !isdigit((unsigned char)text[0]))
+        return false;
+
+    char *end = NULL;
+    errno = 0;
+    const unsigned long long parsed = strtoull(text, &end, 10);
+    if (errno == ERANGE || end == text)
+        return false;
+
+    uint64_t multiplier = 1U;
+    if ((*end == 'K' || *end == 'k') && end[1] == '\0')
+        multiplier = 1024U;
+    else if ((*end == 'M' || *end == 'm') && end[1] == '\0')
+        multiplier = UINT64_C(1024) * 1024U;
+    else if ((*end == 'G' || *end == 'g') && end[1] == '\0')
+        multiplier = UINT64_C(1024) * 1024U * 1024U;
+    else if (*end != '\0')
+        return false;
+
+    if ((uint64_t)parsed > UINT32_MAX / multiplier)
+        return false;
+    *value = (uint32_t)((uint64_t)parsed * multiplier);
+    return true;
+}
+
+static uint32_t automatic_slot_count(size_t slot_stride)
+{
+    size_t count = AUTO_POOL_BUDGET / slot_stride;
+    if (count > DEFAULT_SLOT_COUNT)
+        count = DEFAULT_SLOT_COUNT;
+    if (count < 2U)
+        count = 2U;
+    return (uint32_t)count;
+}
+
+static uint64_t warmup_packet_count(uint32_t payload_size)
+{
+    uint64_t count = payload_size == 0U
+                   ? MAX_WARMUP_PACKETS
+                   : WARMUP_BYTE_BUDGET / payload_size;
+    if (count == 0U)
+        count = 1U;
+    if (count > MAX_WARMUP_PACKETS)
+        count = MAX_WARMUP_PACKETS;
+    return count;
+}
+
 
 static void buffer_get_wait(zipc_link_t *sender, zipc_buffer_t *buffer)
 {
     for (;;) {
-        const zipc_status_t status = zipc_buffer_alloc_ex(sender, 0U, 0U, 0U, buffer, NULL);
+        const zipc_status_t status = zipc_buffer_alloc_ex(
+            sender, 0U, 0U, 0U, buffer, NULL);
         if (status == ZIPC_OK)
             return;
         if (status != ZIPC_ERR_NO_BUFFER) {
             fprintf(stderr, "zipc_buffer_alloc_ex failed: %d\n", (int)status);
-            exit(EXIT_FAILURE);
-        }
-        sched_yield();
-    }
-}
-
-static void buffer_send_wait(zipc_link_t *sender, zipc_buffer_t *buffer,
-                             bool retry_transport_full)
-{
-    for (;;) {
-        const zipc_status_t status = zipc_send(sender, buffer);
-        if (status == ZIPC_OK)
-            return;
-        if (!retry_transport_full || status != ZIPC_ERR_TRANSPORT) {
-            fprintf(stderr, "zipc_send failed: %d\n", (int)status);
             exit(EXIT_FAILURE);
         }
         sched_yield();
@@ -126,19 +162,18 @@ static void edge_link_cleanup(edge_link_t *edge)
 }
 
 static void run_receiver(uint32_t index, uint32_t component_count,
-                         uint64_t packet_count, edge_link_t *edges,
-                         bool retry_transport_full, int ready_fd, int done_fd)
+                         uint64_t warmup_count, uint64_t packet_count,
+                         edge_link_t *edges, int ready_fd, int done_fd)
 {
     const bool final_component = index + 1U == component_count;
 
-    for (uint64_t i = 0U; i < WARMUP_PACKETS; ++i) {
+    for (uint64_t i = 0U; i < warmup_count; ++i) {
         zipc_buffer_t buffer;
         CHECK(zipc_recv(edges[index - 1U].receiver, &buffer));
         if (final_component)
             CHECK(zipc_buffer_release(&buffer));
         else
-            buffer_send_wait(edges[index].sender, &buffer,
-                             retry_transport_full);
+            CHECK(zipc_send(edges[index].sender, &buffer));
     }
     if (final_component) {
         const uint8_t ready = 1U;
@@ -152,8 +187,7 @@ static void run_receiver(uint32_t index, uint32_t component_count,
         if (final_component)
             CHECK(zipc_buffer_release(&buffer));
         else
-            buffer_send_wait(edges[index].sender, &buffer,
-                             retry_transport_full);
+            CHECK(zipc_send(edges[index].sender, &buffer));
     }
     if (final_component) {
         const uint8_t done = 1U;
@@ -164,18 +198,25 @@ static void run_receiver(uint32_t index, uint32_t component_count,
 }
 
 static void run_sender(uint64_t packet_count, uint32_t payload_size,
-                       uint32_t relay_count, edge_link_t *edges,
-                       bool retry_transport_full, int ready_fd, int done_fd,
+                       uint64_t warmup_count, uint32_t relay_count,
+                       edge_link_t *edges, int ready_fd, int done_fd,
                        const char *transport_name)
 {
-    uint8_t payload[SLOT_SIZE];
-    memset(payload, 0xA5, sizeof(payload));
+    uint8_t *payload = NULL;
+    if (payload_size != 0U) {
+        payload = malloc(payload_size);
+        if (payload == NULL) {
+            fprintf(stderr, "payload allocation failed\n");
+            _exit(EXIT_FAILURE);
+        }
+        memset(payload, 0xA5, payload_size);
+    }
 
-    for (uint64_t i = 0U; i < WARMUP_PACKETS; ++i) {
+    for (uint64_t i = 0U; i < warmup_count; ++i) {
         zipc_buffer_t buffer;
         buffer_get_wait(edges[0].sender, &buffer);
         CHECK(zipc_buffer_append(&buffer, payload, payload_size));
-        buffer_send_wait(edges[0].sender, &buffer, retry_transport_full);
+        CHECK(zipc_send(edges[0].sender, &buffer));
     }
     uint8_t marker;
     if (read(ready_fd, &marker, sizeof(marker)) != sizeof(marker))
@@ -186,7 +227,7 @@ static void run_sender(uint64_t packet_count, uint32_t payload_size,
         zipc_buffer_t buffer;
         buffer_get_wait(edges[0].sender, &buffer);
         CHECK(zipc_buffer_append(&buffer, payload, payload_size));
-        buffer_send_wait(edges[0].sender, &buffer, retry_transport_full);
+        CHECK(zipc_send(edges[0].sender, &buffer));
     }
     if (read(done_fd, &marker, sizeof(marker)) != sizeof(marker))
         _exit(EXIT_FAILURE);
@@ -205,6 +246,7 @@ static void run_sender(uint64_t packet_count, uint32_t payload_size,
     printf("rate=%.0f packets/s transfer-rate=%.0f transfers/s "
            "payload-throughput=%.3f MiB/s\n",
            pps, transfers_per_second, mib_s);
+    free(payload);
     fflush(stdout);
     _exit(EXIT_SUCCESS);
 }
@@ -213,11 +255,10 @@ static void usage(const char *program)
 {
     fprintf(stderr,
             "Usage: %s [--transport ring-eventfd|fifo|unix-dgram|mqueue] "
-            "[--packets N] [--payload BYTES] [--relays N] [--slots N] "
-            "[--ring-depth N]\n"
+            "[--packets N] [--payload BYTES|K|M|G] [--relays N] [--slots N]\n"
             "Defaults: --transport ring-eventfd --packets 1000000 "
-            "--payload 8 --relays 0 --slots %u --ring-depth %u\n",
-            program, (unsigned)SLOT_COUNT, (unsigned)DEFAULT_RING_DEPTH);
+            "--payload 8 --relays 0 --slots auto (32 MiB pool target, max %u)\n",
+            program, (unsigned)DEFAULT_SLOT_COUNT);
 }
 
 int main(int argc, char **argv)
@@ -226,11 +267,10 @@ int main(int argc, char **argv)
     uint64_t packet_count = UINT64_C(1000000);
     uint32_t payload_size = 8U;
     uint32_t relay_count = 0U;
-    uint32_t slot_count = SLOT_COUNT;
-    uint32_t ring_depth = DEFAULT_RING_DEPTH;
+    uint32_t slot_count = 0U;
     bool transport_set = false, packets_set = false;
     bool payload_set = false, relays_set = false;
-    bool slots_set = false, ring_set = false;
+    bool slots_set = false;
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--transport") == 0 && i + 1 < argc) {
@@ -243,7 +283,7 @@ int main(int argc, char **argv)
             }
             packets_set = true;
         } else if (strcmp(argv[i], "--payload") == 0 && i + 1 < argc) {
-            if (!parse_u32(argv[++i], UINT32_MAX, &payload_size)) {
+            if (!parse_size_u32(argv[++i], &payload_size)) {
                 usage(argv[0]);
                 return EXIT_FAILURE;
             }
@@ -260,24 +300,29 @@ int main(int argc, char **argv)
                 return EXIT_FAILURE;
             }
             slots_set = true;
-        } else if (strcmp(argv[i], "--ring-depth") == 0 && i + 1 < argc) {
-            if (!parse_u32(argv[++i], UINT32_MAX, &ring_depth)) {
-                usage(argv[0]);
-                return EXIT_FAILURE;
-            }
-            ring_set = true;
         } else {
             usage(argv[0]);
             return EXIT_FAILURE;
         }
     }
-    if (packet_count == 0U || payload_size > SLOT_SIZE || slot_count < 2U ||
-        ring_depth < 2U) {
+    if (packet_count == 0U || (slots_set && slot_count < 2U)) {
         usage(argv[0]);
         return EXIT_FAILURE;
     }
+
+    const uint32_t slot_capacity = payload_size != 0U ? payload_size : 1U;
+    const size_t slot_stride = zipc_pool_required_payload_size(
+        1U, slot_capacity, 0U, PAYLOAD_ALIGNMENT);
+    if (slot_stride == 0U) {
+        fprintf(stderr, "payload size is too large\n");
+        return EXIT_FAILURE;
+    }
+    if (!slots_set)
+        slot_count = automatic_slot_count(slot_stride);
+
     const uint32_t component_count = relay_count + 2U;
     const uint32_t edge_count = component_count - 1U;
+    const uint64_t warmup_count = warmup_packet_count(payload_size);
     int result = EXIT_FAILURE;
     zipc_platform_memory_t *memory = NULL;
     edge_link_t *edges = NULL;
@@ -286,14 +331,14 @@ int main(int argc, char **argv)
     int ready_pipe[2] = { -1, -1 };
     int done_pipe[2] = { -1, -1 };
     printf("config: transport=%s%s packets=%" PRIu64 "%s payload=%u%s "
-           "relays=%u%s components=%u hops=%u slots=%u%s ring-depth=%u%s\n",
+           "relays=%u%s components=%u hops=%u slots=%u%s warmup=%" PRIu64
+           "\n",
            transport_name, transport_set ? "" : " (default)",
            packet_count, packets_set ? "" : " (default)",
            payload_size, payload_set ? "" : " (default)",
            relay_count, relays_set ? "" : " (default)",
            component_count, edge_count,
-           slot_count, slots_set ? "" : " (default)",
-           ring_depth, ring_set ? "" : " (default)");
+           slot_count, slots_set ? "" : " (auto)", warmup_count);
 
     const bool ring_transport = strcmp(transport_name, "ring-eventfd") == 0;
     if (!ring_transport && strcmp(transport_name, "fifo") != 0 &&
@@ -303,7 +348,7 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 #if SIZE_MAX == UINT32_MAX
-    if (ring_transport && ring_depth >
+    if (ring_transport && slot_count >
             (SIZE_MAX - sizeof(zipc_transport_spsc_ring_t)) /
                 sizeof(zipc_message_t)) {
         fprintf(stderr, "ring depth is too large for this platform\n");
@@ -317,11 +362,13 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
     const size_t payload_offset = (control_size + 63U) & ~(size_t)63U;
-    if ((size_t)slot_count > (SIZE_MAX - payload_offset) / SLOT_SIZE) {
+    const size_t payload_bytes = zipc_pool_required_payload_size(
+        slot_count, slot_capacity, 0U, PAYLOAD_ALIGNMENT);
+    if (payload_bytes == 0U || payload_bytes > SIZE_MAX - payload_offset) {
         fprintf(stderr, "pool size overflow\n");
         return EXIT_FAILURE;
     }
-    const size_t shm_size = payload_offset + (size_t)slot_count * SLOT_SIZE;
+    const size_t shm_size = payload_offset + payload_bytes;
 
     char shm_name[64];
     snprintf(shm_name, sizeof(shm_name), "/zipc_tbench_%ld", (long)getpid());
@@ -343,9 +390,9 @@ int main(int argc, char **argv)
         .control_offset = 0U,
         .payload_offset = payload_offset,
         .slot_count = slot_count,
-        .slot_capacity = SLOT_SIZE,
-        .slot_stride = SLOT_SIZE,
-        .payload_alignment = 64U,
+        .slot_capacity = slot_capacity,
+        .slot_stride = 0U,
+        .payload_alignment = PAYLOAD_ALIGNMENT,
     };
     CHECK_SETUP(zipc_pool_format(&pool_cfg));
     CHECK_SETUP(zipc_pool_attach(&pool, &pool_cfg));
@@ -371,7 +418,7 @@ int main(int argc, char **argv)
         memset(&receiver_transport, 0, sizeof(receiver_transport));
 
         if (ring_transport) {
-            link->ring_size = zipc_transport_spsc_ring_size(ring_depth);
+            link->ring_size = zipc_transport_spsc_ring_size(slot_count);
             link->ring = mmap(NULL, link->ring_size, PROT_READ | PROT_WRITE,
                               MAP_SHARED | MAP_ANONYMOUS, -1, 0);
             if (link->ring == MAP_FAILED) {
@@ -379,7 +426,7 @@ int main(int argc, char **argv)
                 goto cleanup;
             }
             CHECK_SETUP(zipc_transport_spsc_ring_initialize(link->ring,
-                                                             ring_depth));
+                                                             slot_count));
             link->event_fd = eventfd(0U, EFD_CLOEXEC);
             if (link->event_fd < 0) {
                 perror("eventfd");
@@ -389,7 +436,7 @@ int main(int argc, char **argv)
             sender_transport.platform_handle = link->ring;
             sender_transport.receive_handle =
                 (void *)(intptr_t)link->event_fd;
-            sender_transport.ring_depth = ring_depth;
+            sender_transport.ring_depth = slot_count;
             receiver_transport = sender_transport;
         } else {
             if (strcmp(transport_name, "fifo") == 0) {
@@ -450,8 +497,8 @@ int main(int argc, char **argv)
             if (index == 0U) {
                 close(ready_pipe[1]);
                 close(done_pipe[1]);
-                run_sender(packet_count, payload_size, relay_count, edges,
-                           ring_transport, ready_pipe[0], done_pipe[0],
+                run_sender(packet_count, payload_size, warmup_count,
+                           relay_count, edges, ready_pipe[0], done_pipe[0],
                            transport_name);
             }
             close(ready_pipe[0]);
@@ -460,8 +507,8 @@ int main(int argc, char **argv)
                 close(ready_pipe[1]);
                 close(done_pipe[1]);
             }
-            run_receiver(index, component_count, packet_count, edges,
-                         ring_transport, ready_pipe[1], done_pipe[1]);
+            run_receiver(index, component_count, warmup_count, packet_count,
+                         edges, ready_pipe[1], done_pipe[1]);
         }
         spawned++;
     }

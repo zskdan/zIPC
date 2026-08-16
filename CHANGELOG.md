@@ -2,9 +2,9 @@
 
 ## v0.2.0
 
-- Extended `zipc-packetrate` with configurable zero-copy relay chains, explicit
-  pool slot sizing, ring-full backpressure, and end-to-end versus aggregate
-  transfer-rate reporting.
+- Extended `zipc-packetrate` with configurable zero-copy relay chains, dynamic
+  payload-sized pool geometry, automatic or explicit slot sizing, bounded
+  warm-up, and end-to-end versus aggregate transfer-rate reporting.
 - Added immutable 64-bit buffer IDs and parent lineage to pool ABI 2 slot
   control metadata without expanding `zipc_message_t` descriptors.
 - Added the packed allocator/session/sequence identity layout, one lazy

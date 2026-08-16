@@ -136,7 +136,11 @@ test: all
 	./build/utilities/zipc-ping --relays 2 --count 3 --interval 0 --timeout 1
 	./build/utilities/zipc-membench --backend posix --size 4M --iterations 2
 	./build/utilities/zipc-packetrate --transport ring-eventfd --packets 10000 --payload 8
-	./build/utilities/zipc-packetrate --transport ring-eventfd --packets 10000 --payload 8 --relays 2 --slots 32 --ring-depth 2
+	./build/utilities/zipc-packetrate --transport ring-eventfd --packets 32 --payload 1M --relays 2
+	./build/utilities/zipc-packetrate --transport ring-eventfd --packets 100 --payload 1K --relays 2 --slots 2
+	@if ./build/utilities/zipc-packetrate --ring-depth 2 >/dev/null 2>&1; then \
+	  echo "zipc-packetrate accepted removed --ring-depth"; exit 1; \
+	fi
 	@for value in garbage 1junk nan inf -1 -0; do \
 	  if ./build/utilities/zipc-ping --interval "$$value" >/dev/null 2>&1; then \
 	    echo "zipc-ping accepted invalid interval: $$value"; exit 1; \
