@@ -76,6 +76,8 @@ transport backend while the payload remains in the zIPC slot pool.
 ```sh
 ./build/utilities/zipc-packetrate --transport ring-eventfd \
     --packets 1000000 --payload 8
+./build/utilities/zipc-packetrate --transport ring-eventfd \
+    --relays 3 --slots 1024 --ring-depth 1024
 ./build/utilities/zipc-packetrate --transport fifo --packets 100000
 ./build/utilities/zipc-packetrate --transport unix-dgram --packets 100000
 ./build/utilities/zipc-packetrate --transport mqueue --packets 100000
@@ -89,7 +91,18 @@ Supported transports:
 - `mqueue`
 
 The reported packet rate includes zIPC allocation, ownership transfer, claim,
-and release, not just the underlying OS notification primitive.
+and release, not just the underlying OS notification primitive. `--relays N`
+adds N forwarding processes between the producer and consumer; the default is
+zero. Relays forward the same buffer without copying, and only the consumer
+releases it. Output reports end-to-end packet rate and the aggregate transfer
+rate across all `N + 1` transport hops.
+
+`--slots N` controls the shared pool's global in-flight buffer capacity and
+defaults to 256. `--ring-depth N` controls the descriptor capacity of each
+shared ring and defaults to 1024; it applies only to `ring-eventfd`. A packet
+occupies one pool slot for its entire trip through the chain, so a 256-slot pool
+cannot fill a 1024-entry ring. Increase `--slots` when measuring larger ring
+occupancies. Ring-full sends are retried as backpressure.
 
 
 ## zipc-stat
