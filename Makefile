@@ -18,7 +18,8 @@ ZIPC_OBJS := build/libs/obj/zipc.o build/libs/obj/zipc-backends.o \
              build/libs/obj/zipc-topology-file.o
 
 EXAMPLE_BINS := build/examples/zipc-basic \
-                build/examples/zipc-shared-buffer-chain \
+                 build/examples/zipc-buffer-api \
+                 build/examples/zipc-shared-buffer-chain \
                 build/examples/zipc-ready-linux5
 TEST_BINS := build/tests/zipc-integration-linux build/tests/zipc-resilience-linux \
              build/tests/zipc-guard-pages-linux build/tests/zipc-hardening-linux \
@@ -36,8 +37,8 @@ DEPS := $(ZIPC_OBJS:%=%.d) $(EXAMPLE_BINS:%=%.d) $(TEST_BINS:%=%.d) \
 
 .PHONY: all clean test libs basic integration integration-targets integration-freertos \
         integration-baremetal guard-pages version-linux api-simplified topology-config \
-        strict-ownership ready-linux5 ready-to-play utilities ping membench \
-        transport-bench stat list-platforms docs shared-buffer-chain
+		strict-ownership ready-linux5 ready-to-play utilities ping membench \
+		transport-bench stat list-platforms docs shared-buffer-chain buffer-api
 
 all: $(ZIPC_LIB) $(EXAMPLE_BINS) $(TEST_BINS) $(UTILITY_BINS)
 
@@ -60,6 +61,8 @@ $(ZIPC_LIB): $(ZIPC_OBJS) Makefile | build/libs
 	$(AR) rcs $@ $(ZIPC_OBJS)
 
 build/examples/zipc-basic: $(ZIPC_LIB) examples/basic/basic.c | build/examples
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
+build/examples/zipc-buffer-api: $(ZIPC_LIB) examples/buffer-api/main.c | build/examples
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
 build/examples/zipc-shared-buffer-chain: $(ZIPC_LIB) examples/shared-buffer-chain/main.c | build/examples
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
@@ -94,6 +97,7 @@ build/utilities/%: $(ZIPC_LIB) utilities/%.c | build/utilities
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) $(filter %.c,$^) $(ZIPC_LIB) -o $@ $(LDLIBS)
 
 basic: build/examples/zipc-basic
+buffer-api: build/examples/zipc-buffer-api
 integration: build/tests/zipc-integration-linux
 integration-targets: integration-freertos integration-baremetal
 integration-freertos: build/tests/zipc-integration-freertos
@@ -119,6 +123,7 @@ docs:
 
 test: all
 	./build/examples/zipc-basic
+	./build/examples/zipc-buffer-api
 	./build/tests/zipc-integration-linux
 	./build/tests/zipc-resilience-linux
 	./build/tests/zipc-guard-pages-linux

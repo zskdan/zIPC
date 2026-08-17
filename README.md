@@ -80,6 +80,7 @@ platform/freertos/                  FreeRTOS adapters
 platform/baremetal/                 bare-metal adapters
 platform/xen/                       Xen static SHM + event-channel adapter
 examples/basic/                     minimal runnable Linux example
+examples/buffer-api/                buffer window and offset walkthrough
 examples/universal/                 heterogeneous integration blueprint
 tests/                              Linux integration regression
 ```
@@ -239,6 +240,22 @@ See `examples/universal/README.md` for the proposed transport at each hop.
   physical ZynqMP IPI for guest-to-guest notification.
 - FF-A is normally kernel-mediated on Linux; SMC/FF-A callbacks in the user
   platform are adapters to a driver or ioctl interface.
+
+## Focused examples
+
+- `examples/basic/` shows minimal allocation, append, send, receive, and
+  release.
+- `examples/buffer-api/` walks through headroom, tailroom, append, prepend,
+  absolute storage offsets, front/back trim, bounds checks, and ownership
+  invalidation:
+
+  ```sh
+  make buffer-api
+  ./build/examples/zipc-buffer-api
+  ```
+
+- `examples/shared-buffer-chain/` demonstrates zero-copy relay ownership and
+  parent/child buffer lineage across A -> B -> C -> D.
 
 ## Ready-to-play examples
 

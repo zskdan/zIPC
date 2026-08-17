@@ -186,6 +186,10 @@ not part of the recommended application interface:
 
 New application code should use the smaller API above.
 
+See [`examples/buffer-api/`](../examples/buffer-api/) for a runnable walkthrough
+of allocation with headroom, append, prepend, absolute offset access, trimming,
+bounds validation, and ownership invalidation.
+
 ## Named links
 
 Platform/integration code binds runtime resources by name and registers a

@@ -23,6 +23,8 @@ docs/ROADMAP.md
 docs/TOPOLOGY.md
 docs/platform-matrix.md
 examples/basic/basic.c
+examples/buffer-api/README.md
+examples/buffer-api/main.c
 examples/ready-to-play/freertos-5-tasks/README.md
 examples/ready-to-play/freertos-5-tasks/main.c
 examples/ready-to-play/linux-5-processes/README.md
