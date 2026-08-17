@@ -9,11 +9,16 @@ VERSION
 docs/API.md
 docs/ARCHITECTURE.md
 docs/BACKENDS.md
+docs/benchmark-data/packetrate-20260816/host.json
+docs/benchmark-data/packetrate-20260816/raw-reduced.csv
+docs/benchmark-data/packetrate-20260816/README.md
+docs/benchmark-data/packetrate-20260816/summary.csv
 docs/CODEX-HANDOFF.md
 docs/DECISIONS.md
 docs/GUARD_PAGES.md
 docs/NNG-MIGRATION.md
 docs/OWNERSHIP.md
+docs/PACKETRATE-BENCHMARK.md
 docs/ROADMAP.md
 docs/TOPOLOGY.md
 docs/platform-matrix.md
@@ -71,6 +76,7 @@ tests/topology-config-linux.c
 tests/version-linux.c
 utilities/README.md
 utilities/zipc-membench.c
+utilities/zipc-packetrate-analyze.py
 utilities/zipc-packetrate.c
 utilities/zipc-ping.c
 utilities/zipc-stat.c

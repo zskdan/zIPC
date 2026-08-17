@@ -5,6 +5,9 @@
 - Extended `zipc-packetrate` with configurable zero-copy relay chains, dynamic
   payload-sized pool geometry, automatic or explicit slot sizing, bounded
   warm-up, and end-to-end versus aggregate transfer-rate reporting.
+- Added a repeatable packet-rate scaling analyzer with randomized relay sweeps,
+  zero-payload controls, CPU/context-switch/RSS metrics, CSV data, and Markdown
+  reporting.
 - Added immutable 64-bit buffer IDs and parent lineage to pool ABI 2 slot
   control metadata without expanding `zipc_message_t` descriptors.
 - Added the packed allocator/session/sequence identity layout, one lazy

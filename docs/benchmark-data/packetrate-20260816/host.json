@@ -1,0 +1,29 @@
+{
+  "generated_at": "2026-08-16T20:33:31.691042+00:00",
+  "provenance_note": "Host/kernel/CPU/Git facts were collected during the run. Binary hash and compiler identity were reconstructed immediately afterward from the unchanged build and are labeled below.",
+  "node": "arrakis",
+  "platform": "Linux-6.11.0-29-generic-x86_64-with-glibc2.39",
+  "machine": "x86_64",
+  "python": "3.12.3",
+  "cpu_count": 22,
+  "cpu_model": "Intel(R) Core(TM) Ultra 7 155H",
+  "cpu_topology": "1 socket, 16 cores, 22 online logical CPUs, 1 NUMA node",
+  "cache": "544 KiB L1d, 896 KiB L1i, 18 MiB L2, 24 MiB L3",
+  "perf_event_paranoid": 4,
+  "git_commit_collected_during_run": "9b27cabe0a4f433fe1860af7ecbd4df5355353d4",
+  "binary_sha256_reconstructed_after_run": "f4fdf9db838b8355643ae5b51e6638a18fde6a824448724f0284e34a05cfecf5",
+  "ambient_compiler_reconstructed_after_run": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "experiment": {
+    "transport": "ring-eventfd",
+    "payload": 11200,
+    "packets": 1000000,
+    "warmup_packets": 1000,
+    "slots": 256,
+    "relays": [0, 1, 2, 5, 10, 20, 50, 100],
+    "control_payload": 0,
+    "control_relays": [0, 100],
+    "repeats": 3,
+    "seed": 20260816,
+    "cooldown_seconds": 0.25
+  }
+}

@@ -112,6 +112,40 @@ ring depth is not an independent benchmark option. The warm-up covers up to
 1000 packets, at least one automatic pool cycle where practical, and targets
 about 64 MiB of payload writes for large payloads.
 
+### Packet-rate scaling analysis
+
+`zipc-packetrate-analyze.py` builds the utility and runs a repeatable relay
+scaling matrix. Its default experiment uses a 11200-byte payload, one million
+packets, three repetitions, relay counts from 0 through 100, and zero-payload
+controls at 0 and 100 relays:
+
+```sh
+python3 utilities/zipc-packetrate-analyze.py
+python3 utilities/zipc-packetrate-analyze.py --quick
+```
+
+Execution order is randomized per repetition to reduce ordering and thermal
+bias. Results are written below `build/benchmarks/` as raw CSV, summary CSV,
+host metadata, and a Markdown report. The analyzer uses GNU `time` for aggregate
+CPU time, context switches, faults, and per-process maximum RSS, and samples the
+Linux `/proc` process tree for aggregate peak PSS so shared mappings are
+apportioned rather than counted once per process. Hardware counters are not
+collected by this script. Host metadata records the executable SHA-256, analyzer
+Git revision and dirty state, analyzer arguments, build invocation, and ambient
+compiler identity. For a custom `--binary`, its source revision must be recorded
+separately; the Git fields describe the analyzer checkout. `--quick` is a smoke
+test; do not use its short-run resource metrics as performance evidence.
+
+Use `--help` to change payload, packet count, relay sets, repetition count,
+fixed slot count, per-run timeout, cooldown, binary, or output location. The
+analyzer requires Linux with `smaps_rollup` and GNU `time`. Generated benchmark
+results below `build/benchmarks/` are not part of the source manifest. The
+selected 2026-08-16 historical evidence referenced below is preserved in the
+source manifest under `docs/benchmark-data/`.
+
+The recorded 11200-byte, 0-100 relay experiment and its IPC verdict are in
+[`docs/PACKETRATE-BENCHMARK.md`](../docs/PACKETRATE-BENCHMARK.md).
+
 
 ## zipc-stat
 
