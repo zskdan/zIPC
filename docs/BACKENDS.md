@@ -78,7 +78,7 @@ Event backends answer: **how does the peer know that descriptors are available?*
 | SMC / FF-A | Secure-call descriptor | Synchronous completion |
 
 The public role enums and `zipc_transport_backend_roles()` make this composition
-explicit. Existing compound transport names remain supported in v0.2 for
+explicit. Existing compound transport names remain supported in v0.3 for
 compatibility.
 
 ## Send publication contract
@@ -94,6 +94,23 @@ therefore published. Synchronous SMC/FF-A callback errors cannot identify the
 visibility point and are conservatively reported as published. The core never
 converts a published failure to success: it invalidates sender ownership and
 leaves the slot in `TRANSFER` for receiver progress or explicit recovery.
+
+## Linux SHM ring restart behavior
+
+The eventfd and polling SHM ring transports are the only v0.3.0 backends with
+online link reconciliation. Receive is split into peek/claim/commit: the ring
+entry remains recoverable until the pool claim succeeds, then consumption is
+committed. Abort leaves the descriptor pending. The producer suppresses an
+already-pending duplicate send during reconciliation.
+
+The eventfd receiver always checks the ring before waiting. Notification is a
+wakeup hint rather than the authority for descriptor availability, preventing a
+published ring entry from being stranded if its eventfd signal was consumed or
+lost across a crash. Polling observes the same ring directly.
+
+`zipc_link_reconcile()` returns `ZIPC_ERR_RECOVERY_UNSUPPORTED` for every other
+transport in v0.3.0. No equivalent recovery guarantee is implied for queues,
+sockets, FIFO, RPMsg, IPI, PL IRQ, Xen, SMC, or FF-A.
 
 ## Example compositions
 

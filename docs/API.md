@@ -242,12 +242,12 @@ const char *version = zipc_version_string();
 ```
 
 `zipc_version_string()` always returns the immutable library version string,
-for example `"0.2.0"`. It is safe to call at any time and the returned pointer
+for example `"0.3.0"`. It is safe to call at any time and the returned pointer
 is valid for the lifetime of the library.
 
 ## Timeout compatibility APIs
 
-ABI 2 transports expose only send and receive operations; they do not expose a
+ABI 3 transports expose only send and receive operations; they do not expose a
 per-call timed operation. Consequently `zipc_send_timeout()` and
 `zipc_recv_timeout()` retain their existing signatures but the
 `timeout_ticks` argument cannot override an opened transport. Blocking and
@@ -255,7 +255,61 @@ timeout behavior comes from the transport configuration used at link creation,
 such as `poll_timeout_ns` for Linux shared-memory polling or transport
 `timeout_ticks` on FreeRTOS. A value accepted by the compatibility API is not a
 portable duration contract. Uniform per-call timeout semantics require the
-planned later transport contract and are not claimed by v0.2.0.
+planned later transport contract and are not claimed by v0.3.0.
+
+## Online component restart recovery
+
+Pool ABI 3 provides a replacement relay with an online, caller-driven recovery
+sequence:
+
+```c
+zipc_restart_t restart;
+zipc_component_restart_begin(pool, component, dead_epoch, &restart);
+
+/* Reopen each local link using restart.epoch, then reconcile it. */
+zipc_link_reconcile(input, &restart, &recovered_input);
+zipc_link_reconcile(output, &restart, &recovered_output);
+
+while (zipc_component_restart_next(&restart, &buffer) == ZIPC_OK) {
+    handle_from_start(&buffer);
+    zipc_send(output, &buffer);
+}
+
+zipc_component_restart_finish(&restart);
+```
+
+The caller must establish that the exact runtime identified by `dead_epoch` has
+terminated before calling `zipc_component_restart_begin()`. Begin atomically
+advances the packed component lifecycle to the next epoch in `RECOVERING`; it is
+not a mechanism for safely running old and replacement instances concurrently.
+
+`zipc_link_reconcile()` requires a link configured with the recovering local
+epoch, stable nonzero `link_id`, and producer or consumer role. In v0.3.0 it
+supports only `ZIPC_TRANSPORT_SHM_RING_EVENTFD` and
+`ZIPC_TRANSPORT_SHM_RING_POLLING`. Other transports return
+`ZIPC_ERR_RECOVERY_UNSUPPORTED`. The ring must be supplied through
+`transport.platform_handle`; an anonymously allocated process-local transport
+cannot be reattached by a replacement runtime.
+
+`zipc_component_restart_next()` returns each stable `OWNED` buffer belonging to
+the old epoch and returns `ZIPC_ERR_NO_BUFFER` after the scan. Adoption preserves
+the immutable `buffer_id`, parent ID, payload, and logical data window while
+changing owner epoch and bumping handle generation. Old high-level buffers and
+links are epoch-fenced and must not be reused.
+
+The replacement invokes the application handler from its beginning for every
+adopted buffer. External side effects are therefore at-least-once; applications
+that require idempotence must deduplicate by `buffer_id`. There is no persistent
+per-cell journal or endpoint lease. `zipc_component_restart_finish()` changes
+the lifecycle from `RECOVERING` to `ACTIVE` only after
+`zipc_component_restart_next()` has returned `ZIPC_ERR_NO_BUFFER`. The caller is
+responsible for reconciling every local recoverable link before finishing.
+
+Recovery-enabled applications must register components and use nonzero epochs.
+Epoch-zero compatibility links remain available to legacy applications but are
+outside the online-restart guarantee. A second crash while the replacement is
+itself in `RECOVERING` is not recoverable online in v0.3.0 and requires the
+quiesced administrative recovery path.
 
 ## Abandoned claim recovery
 

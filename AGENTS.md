@@ -5,11 +5,11 @@ These instructions apply to the complete repository unless a more specific
 
 ## Project status
 
-- Current release: **v0.2.0**.
+- Current release: **v0.3.0**.
 - The project is an experimental chained zero-copy IPC protocol.
 - The public API and shared-memory ABI are not stable before v1.0.
-- v0.2.0 is limited to buffer identity/correlation lineage and required ABI,
-  component-namespace, visited-set, entropy, and trace support.
+- v0.3.0 adds pool ABI 3 supervisorless relay restart recovery for the Linux
+  SHM ring eventfd and polling transports. It is validated on Linux hosts only.
 
 Read these files before changing code:
 
@@ -75,12 +75,17 @@ For changes touching public structures or shared-memory layout, also inspect:
    release/acquire state transitions.
 5. `allocation_cursor` is only a relaxed atomic hint; slot claim is authoritative.
 6. Pool formatting, reset, and shutdown require external serialization.
-7. Pool ABI 2 control memory must support CPU read/write plus 32-bit and 64-bit atomics.
+7. Pool ABI 3 control memory must support CPU read/write plus 32-bit and 64-bit atomics.
 8. Payload memory may be separate and need not support atomics.
 9. Never place control metadata in PL BRAM unless atomic semantics are proven.
 10. The local cookie is never transported or interpreted by zIPC.
 11. Buffer identity is immutable: `{allocator:8, session:24, sequence:32}`.
 12. Component IDs 1 through 254 are usable; 0 and 255 are reserved.
+13. Component lifecycle is one atomic packed epoch/state value: `INACTIVE`,
+    `RECOVERING`, or `ACTIVE`.
+14. Restart recovery requires proof that the exact old runtime has terminated;
+    adopted handlers replay from the start and external side effects are
+    at-least-once unless applications deduplicate by `buffer_id`.
 
 ## Platform rules
 

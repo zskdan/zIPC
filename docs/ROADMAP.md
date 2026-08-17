@@ -79,7 +79,7 @@ RPMsg today is either eliminated in zIPC or made directly observable.
   entries, two-layer observability contract in ARCHITECTURE.md).
 - v0.2.1+: `message_id`, request correlation, richer protocol tracing, request/reply
   visualization.
-- v0.3+: queue/backpressure telemetry, QoS tracing, async/callback tracing,
+- Post-v0.3.0: queue/backpressure telemetry, QoS tracing, async/callback tracing,
   backend-specific instrumentation.
 - v1.0: stable trace ABI, Wireshark dissector and extcap, Perfetto exporter,
   production diagnostics.
@@ -116,7 +116,7 @@ threads per socket, stack memory, scheduler latency. Target profile:
 ## Hardening backlog (pull into upcoming releases)
 
 - Define transport-independent duration units and native per-call timed
-  operations; ABI 2 currently uses backend-open configuration and cannot
+  operations; ABI 3 retains backend-open configuration and cannot
   honestly override it per call.
 - Extend publication/acknowledgement semantics for future async cancellation
   and peer-confirmed delivery beyond the synchronous v0.2 published-error
@@ -155,7 +155,29 @@ semantics; feature negotiation and rejection; payload/access metadata;
 integrity; QoS model; async ownership contract; event-loop integration; and
 richer trace/export support. Exact patch/minor allocation follows design review.
 
-## v0.3 — Advanced buffer model
+## v0.3.0 — Supervisorless relay restart recovery
+
+Completed scope:
+
+- Pool ABI 3 atomic packed component epoch/state lifecycle with `INACTIVE`,
+  `RECOVERING`, and `ACTIVE`.
+- Caller-driven `zipc_component_restart_begin()`/`next()`/`finish()` after the
+  exact old runtime has terminated; no pool-wide recovery supervisor required.
+- Stable old-epoch `OWNED` buffer adoption preserving buffer ID, lineage, and
+  payload while bumping handle generation and fencing old high-level objects.
+- `zipc_link_reconcile()` for Linux SHM ring eventfd and polling only; unsupported
+  transports return `ZIPC_ERR_RECOVERY_UNSUPPORTED`.
+- Linux ring peek/claim/commit receive, duplicate pending-send suppression, and
+  ring-before-wait eventfd behavior.
+- Seeded A->B->C->D->E relay-kill regression with protocol/service recovery
+  min/mean/p50/p95/max for both supported backends.
+
+Validation status: Linux host only; no target hardware validation was performed.
+Application handlers replay from the start, external side effects remain
+at-least-once, and v0.3.0 includes neither a persistent per-cell journal nor
+endpoint leases.
+
+## Advanced buffer model — Deferred beyond v0.3.0
 
 - Scatter-gather segments.
 - Multi-slot messages and chained allocation/release.

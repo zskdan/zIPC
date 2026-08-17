@@ -91,7 +91,8 @@ configuration from another management service.
 
 The file parser currently accepts `[link.NAME]` and `[link NAME]` sections.
 Recognized keys are `id`/`link_id`, `pool`, `transport`, `local`, `remote`,
-`local_epoch`, `hop_limit`, `default_deadline_ns`, and `timeout_ticks`.
+`local_epoch`, `role` (`producer` or `consumer`), `hop_limit`,
+`default_deadline_ns`, and `timeout_ticks`.
 Unknown keys are rejected rather than silently ignored.
 
 ## Shared logical links between processes

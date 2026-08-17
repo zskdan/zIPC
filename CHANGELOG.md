@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.3.0
+
+- Incremented the shared pool ABI to 3 and made component lifecycle one atomic
+  packed epoch/state value with `INACTIVE`, `RECOVERING`, and `ACTIVE` states.
+- Added supervisorless online relay restart recovery through
+  `zipc_component_restart_begin()`, `zipc_component_restart_next()`, and
+  `zipc_component_restart_finish()`. The caller must first establish that the
+  exact old component runtime and epoch can no longer execute.
+- Added adoption of stable old-epoch `OWNED` buffers. Adoption preserves the
+  immutable `buffer_id`, parent lineage, and payload, changes ownership to the
+  recovering epoch, and bumps handle generation so old handles are stale.
+- Added `zipc_link_reconcile()` for interrupted Linux SHM ring eventfd and
+  polling sends/receives. Other transports return
+  `ZIPC_ERR_RECOVERY_UNSUPPORTED` rather than claiming online recovery.
+- Epoch-fenced high-level buffers and links so objects from the terminated
+  runtime cannot be reused by the replacement epoch.
+- Hardened Linux SHM rings with receive peek/claim/commit, duplicate pending-send
+  suppression, and ring-before-wait eventfd handling to close restart races.
+- Defined adopted-buffer processing as replay from the start of the application
+  handler. Protocol state is recovered, but external side effects are
+  at-least-once and applications should deduplicate them by `buffer_id`.
+- Added `tests/recovery-chain-linux.c`: an A->B->C->D->E five-process chain that
+  randomly kills one of three relays at seeded protocol checkpoints. It defaults
+  to 10 iterations each for ring/eventfd and ring/polling and reports protocol
+  and service recovery min/mean/p50/p95/max.
+- Validation is Linux-host only. No target hardware validation was performed,
+  and v0.3.0 does not provide a persistent per-cell journal or endpoint leases.
+- Online recovery requires registered nonzero epochs, stable link IDs, explicit
+  endpoint roles, and externally supplied rings. A second crash while the
+  replacement remains `RECOVERING` requires quiesced administrative recovery.
+
 ## v0.2.0
 
 - Extended `zipc-packetrate` with configurable zero-copy relay chains, dynamic

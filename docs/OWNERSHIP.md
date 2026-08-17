@@ -13,6 +13,26 @@ buffer valid. These rules catch use-after-send, double-send, use-after-release,
 and double-release through the public API. Generation counters reject stale
 handles after slot reuse.
 
+Every high-level buffer and link is also bound to its component epoch. After a
+restart advances that epoch, objects created by the terminated runtime fail the
+epoch fence and cannot be used as replacement-runtime ownership. This fence is
+defensive validation; the exact old runtime must already have been terminated
+before online recovery begins.
+
+## Restart adoption
+
+During pool ABI 3 online recovery, `zipc_component_restart_next()` may adopt a
+stable `OWNED` slot from the terminated epoch. Adoption is an ownership
+continuation, not a new allocation: it preserves the buffer ID, parent ID,
+payload bytes, and logical data window. It changes the owner epoch and increments
+the slot generation, invalidating old handles and local views.
+
+The replacement runs the application handler from the beginning for an adopted
+buffer. zIPC does not retain an application program counter, persistent per-cell
+journal, or endpoint lease. External side effects can therefore occur more than
+once. Applications should use immutable `buffer_id` as the deduplication key
+when effects must be idempotent.
+
 A retained raw pointer returned earlier by `zipc_buffer_data()` is different: in
 normal mode it can still address the shared mapping after ownership transfer.
 Applications must treat the pointer lifetime as ending at send/release.

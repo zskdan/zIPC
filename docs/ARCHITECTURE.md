@@ -61,13 +61,16 @@ bits 31..0   slot ID
 bits 63..32  generation
 ```
 
-The generation changes when a slot is reused, allowing stale handle rejection.
+The generation changes when a slot is reused or adopted by a replacement epoch,
+allowing stale handle rejection.
 
 ### Component
 
-A component has an ID and a runtime epoch. Re-registering the same component ID
-creates a newer epoch. Slots retain the owner epoch so orphan recovery can
-reclaim data from a dead instance without reclaiming data owned by its restart.
+A component has an ID and an atomic packed lifecycle containing its runtime
+epoch and one of `INACTIVE`, `RECOVERING`, or `ACTIVE`. Re-registering or
+restarting the same component ID creates a newer epoch without exposing a mixed
+epoch/state pair. Slots retain the owner epoch so recovery can distinguish data
+owned by the exact terminated instance from data owned by its replacement.
 
 ### Link
 
@@ -78,8 +81,9 @@ A link is directional and binds:
 - a remote component;
 - one transport instance.
 
-Bidirectional communication normally uses two logical links. Stable link ID and
-a local opaque cookie remain post-v0.2.0 work.
+Bidirectional communication normally uses two logical links. Pool ABI 3 recovery
+uses a stable nonzero link ID and an explicit producer/consumer role to reconcile
+supported Linux SHM ring endpoints. A local opaque cookie remains future work.
 
 ## Ownership state model
 
@@ -123,6 +127,29 @@ acquires candidate `OWNED`/`TRANSFER` states before validating owner-protected
 component, epoch, and age metadata. Quiescence prevents that inspection from
 interfering with a receiver that has already consumed a transfer descriptor.
 
+Pool ABI 3 also provides a separate online restart path that does not use these
+quiesced administrative sweeps. After the exact old runtime is terminated,
+`zipc_component_restart_begin()` atomically advances its epoch to `RECOVERING`.
+Supported links are reopened for that epoch and reconciled, stable old-epoch
+`OWNED` buffers are returned one at a time by
+`zipc_component_restart_next()`, and `zipc_component_restart_finish()` publishes
+`ACTIVE` after the adoption iterator has reached `ZIPC_ERR_NO_BUFFER`. The
+caller must reconcile every local link before finishing.
+
+Adoption preserves `buffer_id`, parent lineage, payload bytes, and logical data,
+but changes the owner epoch and increments handle generation. This fences old
+descriptors and high-level buffer views. High-level links are also bound to an
+epoch, so objects inherited from the terminated runtime cannot be used by the
+replacement. Recovery assumes that runtime is no longer executing; epoch
+fencing does not make concurrent old code safe.
+
+The v0.3.0 online contract requires registered nonzero component epochs,
+explicit producer/consumer link roles, stable nonzero link IDs, and externally
+supplied shared-ring mappings. Legacy epoch-zero links and transports that
+allocate anonymous rings internally continue to work normally but are not
+restart-reconcilable. A second failure while the replacement remains in
+`RECOVERING` falls back to quiesced administrative recovery.
+
 Strict payload protection is part of ownership publication. Allocation and
 receive enable access before publishing `OWNED`; transfer preparation, release,
 and owner recovery revoke access before publishing `TRANSFER` or `FREE`; an
@@ -150,7 +177,7 @@ Control-memory requirements:
 - CPU readable;
 - CPU writable;
 - 32-bit atomic operations;
-- 64-bit atomic operations, because pool ABI 2 retains shared
+- 64-bit atomic operations, because pool ABI 3 retains shared
   `_Atomic uint64_t` counters and component lifecycle fields;
 - correct sharing and ordering attributes for all participants.
 
@@ -174,6 +201,14 @@ Current concepts include:
 - Xen ring + event channel;
 - SMC and FF-A callback adapters.
 
+The Linux shared-ring/eventfd and shared-ring/polling implementations expose a
+restart-safe receive sequence: peek a descriptor without consuming it, claim
+the corresponding buffer, then commit ring consumption. Pending duplicate sends
+are suppressed, and eventfd receive checks the ring before waiting so an already
+published descriptor cannot be stranded behind a lost notification. These are
+the only transports supported by `zipc_link_reconcile()` in v0.3.0; other
+transports return `ZIPC_ERR_RECOVERY_UNSUPPORTED`.
+
 A logical link owns its transport instance. Shared rings are SPSC unless a
 specific implementation states otherwise.
 
@@ -188,17 +223,25 @@ may have occurred.
 
 ## Resilience
 
-- Component epochs detect restarts.
+- Atomic packed component epoch/state detects and fences restarts.
 - Heartbeats provide lifecycle evidence.
 - Hop limits and deadlines bound loops and stalls.
 - Orphan recovery reclaims slots owned by a failed component epoch.
+- Online restart recovery adopts stable buffers and reconciles supported Linux
+  SHM ring links without stopping unrelated runtimes.
 - Trace entries record allocation, send, receive, release, recovery, and error
   transitions.
 - `zipc-stat` inspects pool, component, slot, and trace state.
 
+An adopted buffer is passed back to application processing from the beginning
+of its handler. Protocol identity and payload survive, but application execution
+position and external effects do not. Delivery of those effects is at-least-once;
+applications requiring idempotence should deduplicate with `buffer_id`. Pool ABI
+3 has no persistent per-cell journal and no endpoint leases.
+
 ## Current execution and planned model
 
-In v0.2.0, zIPC calls execute in the caller context and the core creates no
+In v0.3.0, zIPC calls execute in the caller context and the core creates no
 threads. Depending on the selected backend, a send or receive may block or poll
 inside that call. There is currently no public asynchronous, service-loop, or
 reactor API.
@@ -377,12 +420,13 @@ shared-memory deployments assume participants agree on native endianness.
 
 ### Other identity concepts
 
-The current protocol identifies components, generation-protected slots, and
-transfer sequences. Future versions will additionally distinguish identities
-that other systems conflate:
+The current protocol identifies components and runtime epochs,
+generation-protected slots, transfer sequences, buffer lineage, and the stable
+link IDs needed by restart recovery. Future versions will add the remaining
+identities that other systems conflate:
 
 ```text
-link_id          stable identity of one logical connection
+link_id          stable identity of one logical connection (implemented)
 link_cookie      local application context for a link
 request_cookie   local context for one asynchronous operation
 buffer_id        immutable allocated-buffer identity (implemented)
@@ -391,7 +435,7 @@ message_id       unique identity of one transmitted message
 correlation_id   end-to-end identity of a request/reply or larger transaction
 endpoint_id      identity of one endpoint
 flow_id          identity of a persistent traffic flow
-peer_epoch       identity of one peer runtime instance
+peer_epoch       identity of one component runtime instance (implemented)
 backend_cookie   maps zIPC activity onto the underlying backend (NNG, Unix,
                  RPMsg, SHM, ...)
 ```
@@ -399,4 +443,4 @@ backend_cookie   maps zIPC activity onto the underlying backend (NNG, Unix,
 These values must not be conflated. In particular, pointer-valued cookies are
 local to one address space and must never be transported. Future request/message
 identity and backend cookies may add semantics without changing buffer identity.
-Stable link ID and local link cookie are deferred beyond v0.2.0.
+The local link cookie and broader link-identity APIs remain future work.

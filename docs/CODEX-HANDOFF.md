@@ -1,16 +1,17 @@
-# Codex handoff — zIPC v0.2.0
+# Codex handoff — zIPC v0.3.0
 
 ## Objective
 
-Continue development from the focused v0.2.0 buffer-identity milestone.
+Continue development from the v0.3.0 supervisorless relay restart recovery
+milestone.
 
 ## Current release
 
-- Version: `0.2.0`
-- Pool ABI: `2`
+- Version: `0.3.0`
+- Pool ABI: `3`
 - Status: experimental prototype; public API and shared-memory ABI are not stable.
-- Scope: buffer identity/correlation lineage plus required namespace, visited
-  set, entropy, ABI, and trace support.
+- Scope: online recovery of a terminated relay runtime on Linux SHM ring
+  eventfd/polling links, building on v0.2 buffer identity and lineage.
 
 Recommended first task: read the authoritative repository documents, run the
 complete test suite, and report code/documentation mismatches before extending
@@ -39,6 +40,27 @@ the protocol.
 - Timeout-oriented send/receive entry points.
 - Fixed-depth trace entries.
 - `zipc-stat` diagnostics.
+
+### v0.3 restart recovery
+
+- One atomic packed component lifecycle value combines epoch with `INACTIVE`,
+  `RECOVERING`, or `ACTIVE` state.
+- `zipc_component_restart_begin()` fences the dead epoch and creates the next
+  epoch in `RECOVERING`; the caller must have terminated the exact old runtime.
+- `zipc_link_reconcile()` repairs interrupted transport state for Linux SHM
+  ring eventfd and polling links only.
+- `zipc_component_restart_next()` adopts stable old-epoch `OWNED` buffers while
+  preserving buffer identity, lineage, and payload and bumping handle generation.
+- `zipc_component_restart_finish()` publishes `ACTIVE` only after reconciliation
+  and adoption are complete.
+- Old high-level buffers and links are epoch-fenced. Adopted buffers rerun their
+  application handler from the start, so external side effects are at-least-once
+  and should be deduplicated by `buffer_id`.
+- Linux ring receive uses peek/claim/commit; duplicate pending sends are
+  suppressed; eventfd receive checks the ring before waiting.
+- Online recovery requires registered nonzero epochs, explicit link roles and
+  IDs, and externally supplied shared-ring mappings. A second crash while the
+  replacement remains `RECOVERING` uses quiesced administrative recovery.
 
 ### Platforms and transports
 
@@ -69,6 +91,7 @@ the protocol.
 
 - Linux integration.
 - Linux resilience.
+- Linux five-process randomized relay restart recovery.
 - Five-process Linux ready-to-play test.
 - Host-buildable FreeRTOS adapter integration.
 - Host-buildable bare-metal adapter integration.
@@ -80,7 +103,7 @@ the protocol.
 - The allocation cursor is a hint, not the allocation operation.
 - No pool-wide lock is required for normal fixed-slot operations.
 - Pool format/reset/shutdown requires external serialization.
-- Pool ABI 2 control memory must support CPU read/write plus 32-bit and 64-bit
+- Pool ABI 3 control memory must support CPU read/write plus 32-bit and 64-bit
   atomics.
 - PL BRAM is payload-only unless atomics are proven.
 - Barriers do not replace cache maintenance.
@@ -90,7 +113,7 @@ the protocol.
 
 ## Known limitations
 
-- Timeout behavior is not uniform across transports. ABI 2 compatibility
+- Timeout behavior is not uniform across transports. ABI 3 compatibility
   timeout entry points cannot override the timeout fixed when a backend is
   opened; the per-call argument has no portable duration semantics.
 - Transport sends distinguish safe pre-publication failure from
@@ -102,9 +125,15 @@ the protocol.
 - No production reserved-memory Linux driver is included.
 - Cache-maintenance APIs are planned, not implemented.
 - No full async request engine yet.
-- Link ID/cookie, correlation ID, QoS model, readiness handshake, and peer state
-  APIs are planned, not implemented.
+- General link identity APIs/local cookie, correlation ID, QoS model, readiness
+  handshake, and peer state APIs are planned, not implemented.
 - FreeRTOS and bare-metal integration tests do not replace target hardware runs.
+- Online link reconciliation supports only Linux
+  `ZIPC_TRANSPORT_SHM_RING_EVENTFD` and `ZIPC_TRANSPORT_SHM_RING_POLLING`;
+  all other transports return `ZIPC_ERR_RECOVERY_UNSUPPORTED`.
+- Recovery has no persistent per-cell journal or endpoint leases.
+- Recovery cannot make external side effects exactly-once; applications must
+  deduplicate replay by immutable `buffer_id` where required.
 
 ## v0.1.11 hardening findings
 
@@ -125,14 +154,17 @@ the protocol.
 
 ### Link identity and cookie
 
-Deferred beyond v0.2.0:
+Pool ABI 3 link configuration includes the stable nonzero `uint64_t link_id`
+needed for supported restart reconciliation. A dedicated public ID type and
+application cookie remain deferred:
 
 ```c
 typedef uint64_t zipc_link_id_t;
 typedef uintptr_t zipc_cookie_t;
 ```
 
-- Link ID is stable and identifies the logical connection.
+- Link ID is stable and identifies the logical connection; its configuration
+  field is implemented for v0.3 recovery.
 - Cookie is application-owned local context.
 - Cookie must not be transported.
 - A pointer cookie is meaningful only in one address space.
@@ -191,9 +223,28 @@ transport setup, memory-layout agreement, cache policy, and QoS compatibility.
 
 ### Doxygen
 
-`Doxyfile` and `make docs` exist. New v0.2.0 public APIs are documented; a
+`Doxyfile` and `make docs` exist. New v0.3.0 public APIs are documented; a
 complete audit of unrelated pre-existing APIs and generated example pages is
 deferred.
+
+## v0.3.0 recovery scope
+
+- Recovery is online with respect to other live component runtimes and does not
+  require a pool-wide supervisor or pool-wide quiescence.
+- The exact old relay runtime must be terminated before restart begins. An epoch
+  fence is not permission to let old code continue running.
+- Component lifecycle epoch/state changes atomically, preventing readers from
+  observing a mixed epoch and state.
+- Stable old-epoch `OWNED` buffers are adopted in place. `buffer_id`, parent ID,
+  and payload remain unchanged; handle generation and owner epoch change.
+- Link reconciliation is deliberately restricted to the two Linux SHM ring
+  transports whose descriptor publication can be inspected and repaired.
+- Application handling of an adopted buffer restarts from its beginning. zIPC
+  does not persist application program counters or side-effect journals.
+- `tests/recovery-chain-linux.c` runs A->B->C->D->E, randomly kills one of three
+  relays at seeded checkpoints, defaults to 10 iterations for each eventfd and
+  polling backend, and reports protocol/service min/mean/p50/p95/max recovery.
+- Release validation is Linux-host only; no target hardware was validated.
 
 ## v0.2.0 identity scope
 

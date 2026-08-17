@@ -1,4 +1,4 @@
-# zIPC v0.2.0
+# zIPC v0.3.0
 
 zIPC is an experimental chained zero-copy IPC protocol. A component allocates
 a fixed slot from a shared pool, processes the payload in place, and transfers
@@ -6,12 +6,12 @@ only a generation-protected slot handle to the next component. Exactly one
 component owns a slot at a time. Loops are supported: `hop_count` records total
 processing passes and an exact 256-bit visited set records distinct components.
 
-**Status:** experimental v0.2 prototype. The public API and shared-memory ABI
+**Status:** experimental v0.3 prototype. The public API and shared-memory ABI
 are not stable before v1.0, and this release is not production-ready.
 
 
 
-## Application API (v0.2.0)
+## Application API (v0.3.0)
 
 The normal application path is intentionally small:
 
@@ -28,7 +28,33 @@ zipc_buffer_release(&buffer);    /* buffer invalid afterward */
 See [`docs/API.md`](docs/API.md), [`docs/NNG-MIGRATION.md`](docs/NNG-MIGRATION.md),
 and [`examples/shared-buffer-chain/`](examples/shared-buffer-chain/).
 
-## What is new in v0.2.0
+## What is new in v0.3.0
+
+- Pool ABI 3 packs each component lifecycle epoch and state into one atomic
+  value with `INACTIVE`, `RECOVERING`, and `ACTIVE` states.
+- `zipc_component_restart_begin()`, `zipc_component_restart_next()`, and
+  `zipc_component_restart_finish()` let a replacement runtime recover online
+  without a recovery supervisor after the exact old runtime has terminated.
+- Stable old-epoch `OWNED` buffers are adopted with their `buffer_id`, lineage,
+  and payload intact while the generation is bumped to fence stale handles.
+- `zipc_link_reconcile()` repairs interrupted sends/receives for the Linux SHM
+  ring eventfd and polling transports. Other transports return
+  `ZIPC_ERR_RECOVERY_UNSUPPORTED`.
+- Old high-level buffers and links are epoch-fenced. An adopted buffer reruns
+  its application handler from the beginning; external side effects therefore
+  remain at-least-once and should be deduplicated by `buffer_id`.
+- Linux ring receive now uses peek/claim/commit, suppresses duplicate pending
+  sends, and checks the ring before an eventfd wait.
+- `tests/recovery-chain-linux.c` exercises seeded relay failures across
+  A->B->C->D->E and reports protocol and service recovery distributions.
+
+This release has Linux-host validation only. It has not been validated on
+target hardware and does not implement a persistent per-cell journal or
+endpoint leases. Online recovery requires registered nonzero epochs and
+externally supplied shared rings; a second crash during `RECOVERING` requires
+the quiesced administrative recovery path.
+
+## What was new in v0.2.0
 
 - Immutable buffer identity and direct parent lineage in pool ABI 2.
 - A 1..254 component namespace with an exact 256-bit visited set.
@@ -146,7 +172,7 @@ uses two links or a bidirectional transport configured as two logical links.
 - `ZIPC_SHM_XEN_STATIC`
 - `ZIPC_SHM_PREALLOCATED` — caller-owned static array, linker section, OCRAM/TCM, or BSP-provided memory
 
-Pool ABI 2 `control_memory` must advertise CPU read/write plus 32-bit and
+Pool ABI 3 `control_memory` must advertise CPU read/write plus 32-bit and
 64-bit atomic capability because its shared header and component table actively
 use both `_Atomic uint32_t` and `_Atomic uint64_t` fields.
 `payload_memory` may be separate and does not need atomic support.
@@ -321,8 +347,8 @@ make integration-targets
 
 The stubs under `tests/stubs/` provide only enough FreeRTOS/OpenAMP behavior for host regression. Target validation still requires the actual FreeRTOS BSP, OpenAMP stack, cache policy, IPI driver, and hardware memory map.
 
-No target hardware validation was performed for v0.2.0; all release validation
-reported for this worktree is Linux-host testing or host-stub integration.
+No target hardware validation was performed for v0.3.0; release validation for
+the new recovery behavior is Linux-host testing only.
 
 ### Polling event backend
 

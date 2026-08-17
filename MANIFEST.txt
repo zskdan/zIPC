@@ -66,6 +66,7 @@ tests/integration-freertos.c
 tests/integration-linux.c
 tests/identity-linux.c
 tests/identity-test.h
+tests/recovery-chain-linux.c
 tests/resilience-linux.c
 tests/strict-ownership-linux.c
 tests/stubs/FreeRTOS.h

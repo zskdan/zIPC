@@ -213,3 +213,33 @@ progress; hook configuration is externally serialized with protocol calls.
 Slot history is written only by a validated owner.
 Owner-unsafe errors may emit an external record with zero identity and invalid
 handle without touching slot metadata.
+
+## D025 — Online restart recovery is epoch-fenced and transport-specific
+
+Pool ABI 3 stores component epoch and lifecycle state in one atomic packed value
+with `INACTIVE`, `RECOVERING`, and `ACTIVE` states. A replacement runtime may
+start online recovery only after the exact old runtime is known to have
+terminated. `zipc_component_restart_begin()` advances to a new `RECOVERING`
+epoch; old high-level buffers and links are rejected by epoch fences.
+This partially supersedes D012: a stable link-ID configuration field is now
+implemented for recovery, while the local application cookie remains deferred.
+
+Stable old-epoch `OWNED` buffers are adopted in place. Their immutable
+`buffer_id`, parent lineage, and payload are preserved, while owner epoch and
+handle generation advance. The application handler reruns from its beginning.
+External side effects are consequently at-least-once and applications should
+deduplicate by `buffer_id`; zIPC does not claim a persistent per-cell journal or
+endpoint leases.
+
+Online `zipc_link_reconcile()` is supported only for Linux SHM ring eventfd and
+polling transports, where peek/claim/commit and inspectable ring publication make
+repair possible. Duplicate pending sends are suppressed and eventfd checks the
+ring before waiting. Other transports return
+`ZIPC_ERR_RECOVERY_UNSUPPORTED` until they define equivalent inspectable and
+repairable publication semantics.
+
+The v0.3.0 guarantee applies to registered nonzero epochs and externally
+supplied shared-ring mappings. Transfer metadata persists the stable link ID so
+reconciliation cannot move a descriptor to another same-peer link. A second
+crash during `RECOVERING` is deferred; it requires quiesced administrative
+recovery in this release.
