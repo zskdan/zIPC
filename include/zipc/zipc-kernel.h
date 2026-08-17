@@ -7,7 +7,7 @@
 #include <linux/wait.h>
 #include <linux/kfifo.h>
 
-#define ZIPC_KERNEL_ABI_VERSION 2U
+#define ZIPC_KERNEL_ABI_VERSION 3U
 
 typedef u64 zipc_handle_t;
 typedef u16 zipc_component_id_t;
@@ -44,7 +44,8 @@ typedef enum {
     ZIPC_ERR_INVALID_BUFFER,
     ZIPC_ERR_BUFFER_TOO_SMALL,
     ZIPC_ERR_ENTROPY_UNAVAILABLE,
-    ZIPC_ERR_TRANSPORT_PUBLISHED
+    ZIPC_ERR_TRANSPORT_PUBLISHED,
+    ZIPC_ERR_RECOVERY_UNSUPPORTED
 } zipc_status_t;
 
 typedef enum {

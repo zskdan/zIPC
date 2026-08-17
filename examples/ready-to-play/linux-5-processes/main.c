@@ -97,11 +97,13 @@ int main(void)
     printf("memory: opened %s (%u bytes, POSIX shm)\n",
            memory_cfg.backend.posix.name, (unsigned)SHM_SIZE);
 
+    const size_t payload_offset =
+        (zipc_pool_required_control_size(SLOT_COUNT) + 63U) & ~(size_t)63U;
     const zipc_pool_config_t pool_cfg = {
         .control_memory = memory,
         .payload_memory = NULL,
         .control_offset = 0U,
-        .payload_offset = 16U * 1024U,
+        .payload_offset = payload_offset,
         .slot_count = SLOT_COUNT,
         .slot_capacity = SLOT_SIZE,
         .slot_stride = SLOT_SIZE,
@@ -109,8 +111,8 @@ int main(void)
     };
     CHECK_STATUS(zipc_pool_format(&pool_cfg));
     CHECK_STATUS(zipc_pool_attach(&pool, &pool_cfg));
-    printf("pool: %u slots x %u bytes, payload at offset %u\n",
-           (unsigned)SLOT_COUNT, (unsigned)SLOT_SIZE, 16U * 1024U);
+    printf("pool: %u slots x %u bytes, payload at offset %zu\n",
+           (unsigned)SLOT_COUNT, (unsigned)SLOT_SIZE, payload_offset);
 
     for (unsigned int i = 0U; i < LINK_COUNT; ++i) {
         const size_t ring_size = zipc_transport_spsc_ring_size(RING_DEPTH);

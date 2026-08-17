@@ -338,7 +338,6 @@ struct zipc_platform_transport {
             zipc_linux_spsc_ring_t *ring;
             size_t mapping_size;
             int event_fd;
-            uint64_t pending_events;
         } ring_eventfd;
         struct {
             zipc_linux_spsc_ring_t *ring;
@@ -674,15 +673,27 @@ zipc_status_t zipc_platform_transport_send(
             transport->handle.ring_eventfd.ring, message);
         if (status != ZIPC_OK)
             return status;
+#ifdef ZIPC_TESTING
+        zipc_test_recovery_checkpoint(ZIPC_TEST_RECOVERY_SEND_POST_PUBLISH,
+                                      message->source_component);
+#endif
         const uint64_t one = 1U;
         return write(transport->handle.ring_eventfd.event_fd,
                      &one, sizeof(one)) == (ssize_t)sizeof(one)
              ? ZIPC_OK : ZIPC_ERR_TRANSPORT_PUBLISHED;
     }
 
-    if (transport->type == ZIPC_TRANSPORT_SHM_RING_POLLING)
-        return zipc_linux_common_ring_push(
+    if (transport->type == ZIPC_TRANSPORT_SHM_RING_POLLING) {
+        zipc_status_t status = zipc_linux_common_ring_push(
             transport->handle.ring_polling.ring, message);
+        if (status != ZIPC_OK)
+            return status;
+#ifdef ZIPC_TESTING
+        zipc_test_recovery_checkpoint(ZIPC_TEST_RECOVERY_SEND_POST_PUBLISH,
+                                      message->source_component);
+#endif
+        return ZIPC_OK;
+    }
 
     if (transport->type == ZIPC_TRANSPORT_RPMSG) {
         const ssize_t sent = write(transport->handle.fd, message,
@@ -762,21 +773,21 @@ zipc_status_t zipc_platform_transport_receive(
     }
 
     if (transport->type == ZIPC_TRANSPORT_SHM_RING_EVENTFD) {
-        if (transport->handle.ring_eventfd.pending_events == 0U) {
-            uint64_t counter = 0U;
-            if (read(transport->handle.ring_eventfd.event_fd,
-                     &counter, sizeof(counter)) != (ssize_t)sizeof(counter) ||
-                counter == 0U)
-                return ZIPC_ERR_TRANSPORT;
-            transport->handle.ring_eventfd.pending_events = counter;
-        }
-
         zipc_status_t status = zipc_linux_common_ring_pop(
             transport->handle.ring_eventfd.ring, message);
-        if (status != ZIPC_OK)
-            return status;
-        --transport->handle.ring_eventfd.pending_events;
-        return ZIPC_OK;
+        while (status == ZIPC_ERR_NO_BUFFER) {
+            uint64_t counter = 0U;
+            ssize_t received;
+            do {
+                received = read(transport->handle.ring_eventfd.event_fd,
+                                &counter, sizeof(counter));
+            } while (received < 0 && errno == EINTR);
+            if (received != (ssize_t)sizeof(counter) || counter == 0U)
+                return ZIPC_ERR_TRANSPORT;
+            status = zipc_linux_common_ring_pop(
+                transport->handle.ring_eventfd.ring, message);
+        }
+        return status;
     }
 
     if (transport->type == ZIPC_TRANSPORT_SHM_RING_POLLING) {
@@ -849,6 +860,106 @@ zipc_status_t zipc_platform_transport_receive(
     }
 
     return ZIPC_ERR_INVALID_ARGUMENT;
+}
+
+zipc_status_t zipc_platform_transport_receive_begin(
+    zipc_platform_transport_t *transport,
+    zipc_message_t *message,
+    zipc_transport_receive_token_t *token)
+{
+    if (transport == NULL || message == NULL || token == NULL)
+        return ZIPC_ERR_INVALID_ARGUMENT;
+    memset(token, 0, sizeof(*token));
+    token->transport_cookie = (uintptr_t)transport;
+
+    if (transport->type == ZIPC_TRANSPORT_SHM_RING_EVENTFD) {
+        for (;;) {
+            uint32_t position = 0U;
+            zipc_status_t status = zipc_linux_common_ring_peek(
+                transport->handle.ring_eventfd.ring, message, &position);
+            if (status == ZIPC_OK) {
+                token->position = position;
+                token->transactional = true;
+                token->pending = true;
+                return ZIPC_OK;
+            }
+            if (status != ZIPC_ERR_NO_BUFFER)
+                return status;
+            uint64_t counter = 0U;
+            ssize_t received;
+            do {
+                received = read(transport->handle.ring_eventfd.event_fd,
+                                &counter, sizeof(counter));
+            } while (received < 0 && errno == EINTR);
+            if (received != (ssize_t)sizeof(counter) || counter == 0U)
+                return ZIPC_ERR_TRANSPORT;
+        }
+    }
+
+    if (transport->type == ZIPC_TRANSPORT_SHM_RING_POLLING) {
+        const uint64_t timeout_ns = transport->handle.ring_polling.timeout_ns;
+        uint64_t deadline_ns = 0U;
+        if (timeout_ns != 0U) {
+            const uint64_t now_ns = zipc_monotonic_time_ns();
+            deadline_ns = UINT64_MAX - now_ns < timeout_ns
+                        ? UINT64_MAX : now_ns + timeout_ns;
+        }
+        for (;;) {
+            uint32_t position = 0U;
+            zipc_status_t status = zipc_linux_common_ring_peek(
+                transport->handle.ring_polling.ring, message, &position);
+            if (status == ZIPC_OK) {
+                token->position = position;
+                token->transactional = true;
+                token->pending = true;
+                return ZIPC_OK;
+            }
+            if (status != ZIPC_ERR_NO_BUFFER)
+                return status;
+            if (timeout_ns != 0U &&
+                zipc_monotonic_time_ns() >= deadline_ns)
+                return ZIPC_ERR_TIMEOUT;
+            zipc_cpu_relax();
+        }
+    }
+
+    zipc_status_t status = zipc_platform_transport_receive(transport, message);
+    if (status == ZIPC_OK)
+        token->pending = true;
+    return status;
+}
+
+zipc_status_t zipc_platform_transport_receive_commit(
+    zipc_platform_transport_t *transport,
+    zipc_transport_receive_token_t *token)
+{
+    if (transport == NULL || token == NULL || !token->pending ||
+        token->transport_cookie != (uintptr_t)transport)
+        return ZIPC_ERR_INVALID_ARGUMENT;
+    zipc_status_t status = ZIPC_OK;
+    if (token->transactional) {
+        if (transport->type != ZIPC_TRANSPORT_SHM_RING_EVENTFD &&
+            transport->type != ZIPC_TRANSPORT_SHM_RING_POLLING)
+            return ZIPC_ERR_INVALID_ARGUMENT;
+        zipc_transport_spsc_ring_t *ring =
+            transport->type == ZIPC_TRANSPORT_SHM_RING_EVENTFD
+                ? transport->handle.ring_eventfd.ring
+                : transport->handle.ring_polling.ring;
+        status = zipc_linux_common_ring_commit(ring,
+                                               (uint32_t)token->position);
+    }
+    if (status == ZIPC_OK)
+        token->pending = false;
+    return status;
+}
+
+void zipc_platform_transport_receive_abort(
+    zipc_platform_transport_t *transport,
+    zipc_transport_receive_token_t *token)
+{
+    if (transport != NULL && token != NULL &&
+        token->transport_cookie == (uintptr_t)transport)
+        token->pending = false;
 }
 
 void zipc_platform_transport_close(zipc_platform_transport_t *transport)

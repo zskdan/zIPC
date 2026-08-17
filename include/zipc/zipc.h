@@ -11,12 +11,12 @@ extern "C" {
 #endif
 
 #define ZIPC_VERSION_MAJOR        0U
-#define ZIPC_VERSION_MINOR        2U
+#define ZIPC_VERSION_MINOR        3U
 #define ZIPC_VERSION_PATCH        0U
-#define ZIPC_VERSION_STRING       "0.2.0"
+#define ZIPC_VERSION_STRING       "0.3.0"
 
 #define ZIPC_POOL_MAGIC             UINT32_C(0x5A495043)
-#define ZIPC_POOL_ABI_VERSION       UINT16_C(2)
+#define ZIPC_POOL_ABI_VERSION       UINT16_C(3)
 #define ZIPC_TRACE_DEPTH            8U
 #define ZIPC_HOP_LIMIT_UNLIMITED    UINT32_MAX
 #define ZIPC_DEADLINE_NONE          UINT64_MAX
@@ -68,7 +68,8 @@ typedef enum {
     ZIPC_ERR_BUFFER_TOO_SMALL,
     ZIPC_ERR_ENTROPY_UNAVAILABLE,
     /** Descriptor is visible; sender ownership was consumed despite failure. */
-    ZIPC_ERR_TRANSPORT_PUBLISHED
+    ZIPC_ERR_TRANSPORT_PUBLISHED,
+    ZIPC_ERR_RECOVERY_UNSUPPORTED
 } zipc_status_t;
 
 typedef enum {
@@ -78,6 +79,21 @@ typedef enum {
     ZIPC_SLOT_TRANSFER,
     ZIPC_SLOT_ERROR
 } zipc_slot_state_t;
+
+typedef enum {
+    ZIPC_COMPONENT_INACTIVE = 0,
+    ZIPC_COMPONENT_RECOVERING,
+    ZIPC_COMPONENT_ACTIVE
+} zipc_component_state_t;
+
+typedef enum {
+    ZIPC_CLAIM_NONE = 0,
+    ZIPC_CLAIM_ALLOCATE,
+    ZIPC_CLAIM_SEND,
+    ZIPC_CLAIM_RECEIVE,
+    ZIPC_CLAIM_RELEASE,
+    ZIPC_CLAIM_ROLLBACK
+} zipc_claim_kind_t;
 
 typedef struct {
     uint32_t offset;
@@ -132,8 +148,8 @@ typedef void (*zipc_trace_hook_t)(const zipc_trace_record_t *record,
 void zipc_trace_set_hook(zipc_trace_hook_t hook, void *context);
 
 typedef struct {
-    _Atomic uint32_t epoch;
-    _Atomic uint32_t active;
+    /** Packed {epoch:32,state:32}; one CAS publishes lifecycle changes. */
+    _Atomic uint64_t lifecycle;
     _Atomic uint64_t last_heartbeat_ns;
     _Atomic uint64_t recovered_slots;
 } zipc_component_status_t;
@@ -165,6 +181,20 @@ typedef struct {
     uint64_t deadline_ns;
     uint32_t trace_count;
     uint32_t recovery_count;
+    /** Exact component epoch and operation holding a transient CLAIMING state. */
+    _Atomic uint64_t claim_token;
+    uint32_t claim_previous_sequence;
+    zipc_buffer_region_t claim_previous_region;
+    zipc_component_id_t claim_previous_owner;
+    uint16_t reserved_claim;
+    uint32_t claim_previous_owner_epoch;
+    uint64_t transfer_link_id;
+    zipc_component_id_t transfer_source_id;
+    uint16_t reserved_transfer;
+    uint32_t transfer_source_epoch;
+    uint32_t transfer_hop_count;
+    uint64_t transfer_acquired_ns;
+    zipc_visited_set_t transfer_visited;
     zipc_trace_entry_t trace[ZIPC_TRACE_DEPTH];
 } zipc_slot_control_t;
 
@@ -302,7 +332,7 @@ typedef enum {
 } zipc_pool_flag_t;
 
 typedef struct {
-    /* ABI 2 requires CPU read/write plus 32-bit and 64-bit atomics. */
+    /* ABI 3 requires CPU read/write plus 32-bit and 64-bit atomics. */
     zipc_platform_memory_t *control_memory;
     size_t control_offset;
 
@@ -409,9 +439,21 @@ uint64_t zipc_buffer_payload_physical_address(const zipc_pool_t *pool,
 typedef struct {
     uint32_t epoch;
     bool active;
+    zipc_component_state_t state;
     uint64_t last_heartbeat_ns;
     uint64_t recovered_slots;
 } zipc_component_snapshot_t;
+
+/** Stack-owned state for one exact component restart on one pool. */
+typedef struct {
+    zipc_pool_t *pool;
+    zipc_component_id_t component;
+    uint16_t reserved;
+    uint32_t dead_epoch;
+    uint32_t epoch;
+    uint32_t cursor;
+    bool scan_complete;
+} zipc_restart_t;
 
 typedef struct {
     uint32_t recovered_owned;
@@ -431,6 +473,22 @@ zipc_status_t zipc_component_unregister(zipc_pool_t *pool,
 zipc_status_t zipc_component_snapshot(const zipc_pool_t *pool,
                                        zipc_component_id_t component,
                                        zipc_component_snapshot_t *snapshot);
+/**
+ * Fence one terminated component runtime and begin online recovery.
+ *
+ * The caller must have established that @p dead_epoch is no longer executing.
+ * No pool-wide quiescence is required. The returned component epoch remains in
+ * RECOVERING until zipc_component_restart_finish() succeeds.
+ */
+zipc_status_t zipc_component_restart_begin(zipc_pool_t *pool,
+                                            zipc_component_id_t component,
+                                            uint32_t dead_epoch,
+                                            zipc_restart_t *restart);
+/** Adopt the next stable buffer owned by the terminated epoch. */
+zipc_status_t zipc_component_restart_next(zipc_restart_t *restart,
+                                           zipc_buffer_t *buffer);
+/** Publish the recovering component as active after reconciliation. */
+zipc_status_t zipc_component_restart_finish(zipc_restart_t *restart);
 /**
  * Recover slots belonging to one dead component runtime.
  *
@@ -739,6 +797,28 @@ zipc_status_t zipc_platform_transport_receive(
     zipc_platform_transport_t *transport,
     zipc_message_t *message);
 
+/** Opaque token for claim-before-commit receive on recoverable transports. */
+typedef struct {
+    uint64_t position;
+    uintptr_t transport_cookie;
+    bool transactional;
+    bool pending;
+} zipc_transport_receive_token_t;
+
+/** Peek the next descriptor without consuming it on transactional transports. */
+zipc_status_t zipc_platform_transport_receive_begin(
+    zipc_platform_transport_t *transport,
+    zipc_message_t *message,
+    zipc_transport_receive_token_t *token);
+/** Commit consumption after the corresponding ownership claim is complete. */
+zipc_status_t zipc_platform_transport_receive_commit(
+    zipc_platform_transport_t *transport,
+    zipc_transport_receive_token_t *token);
+/** Abandon a peek without consuming its descriptor. */
+void zipc_platform_transport_receive_abort(
+    zipc_platform_transport_t *transport,
+    zipc_transport_receive_token_t *token);
+
 void zipc_platform_transport_close(zipc_platform_transport_t *transport);
 
 /* Returns 0 for non-Xen transports or when no port has been bound. */
@@ -749,11 +829,19 @@ uint32_t zipc_platform_transport_xen_local_port(
 
 typedef struct zipc_link zipc_link_t;
 
+typedef enum {
+    ZIPC_LINK_ROLE_UNSPECIFIED = 0,
+    ZIPC_LINK_ROLE_PRODUCER,
+    ZIPC_LINK_ROLE_CONSUMER
+} zipc_link_role_t;
+
 typedef struct {
     zipc_pool_t *pool;
     zipc_component_id_t local_component;
     zipc_component_id_t remote_component;
+    uint64_t link_id;           /**< Stable nonzero ID required for recovery. */
     uint32_t local_epoch;       /**< 0: use currently registered epoch. */
+    zipc_link_role_t role;      /**< Producer or consumer for restart recovery. */
     uint32_t hop_limit;         /**< 0: unlimited. */
     uint64_t default_deadline_ns; /**< 0: no deadline; relative duration. */
     uint32_t timeout_ticks;     /**< Backend-specific blocking timeout. */
@@ -794,6 +882,7 @@ typedef struct {
     zipc_component_id_t local_component;
     zipc_component_id_t remote_component;
     uint32_t local_epoch;
+    zipc_link_role_t role;
     uint32_t hop_limit;
     uint64_t default_deadline_ns;
     uint32_t timeout_ticks;
@@ -809,6 +898,10 @@ typedef struct {
 zipc_status_t zipc_link_create(zipc_link_t **link,
                                const zipc_link_config_t *config);
 void zipc_link_destroy(zipc_link_t *link);
+/** Reconcile one shared-ring endpoint for an in-progress component restart. */
+zipc_status_t zipc_link_reconcile(zipc_link_t *link,
+                                  const zipc_restart_t *restart,
+                                  uint32_t *recovered_transfers);
 
 /**
  * @brief Register fully-resolved legacy named links.
@@ -906,7 +999,7 @@ zipc_status_t zipc_buffer_alloc_ex(zipc_link_t *link, size_t size,
  */
 zipc_status_t zipc_send(zipc_link_t *link, zipc_buffer_t *buffer);
 /**
- * Compatibility timed send. In ABI 2 the argument does not override the
+ * Compatibility timed send. In ABI 3 the argument does not override the
  * timeout fixed when the transport was opened; backend configuration remains
  * authoritative.
  */
@@ -916,7 +1009,7 @@ zipc_status_t zipc_send_timeout(zipc_link_t *link, zipc_buffer_t *buffer,
 /** Receive and claim ownership of the next buffer. */
 zipc_status_t zipc_recv(zipc_link_t *link, zipc_buffer_t *buffer);
 /**
- * Compatibility timed receive. In ABI 2 the argument does not override the
+ * Compatibility timed receive. In ABI 3 the argument does not override the
  * timeout fixed when the transport was opened; backend configuration remains
  * authoritative.
  */
@@ -1077,6 +1170,23 @@ static inline bool zipc_buffer_id_valid(zipc_buffer_id_t id)
            zipc_buffer_id_session(id) != 0U &&
            zipc_buffer_id_sequence(id) != UINT32_MAX;
 }
+
+#ifdef ZIPC_TESTING
+typedef enum {
+    ZIPC_TEST_RECOVERY_SEND_CLAIM = 1,
+    ZIPC_TEST_RECOVERY_RECEIVE_CLAIM,
+    ZIPC_TEST_RECOVERY_SEND_PRE_PUBLISH,
+    ZIPC_TEST_RECOVERY_SEND_POST_PUBLISH,
+    ZIPC_TEST_RECOVERY_RECEIVE_POST_CLAIM
+} zipc_test_recovery_phase_t;
+typedef void (*zipc_test_recovery_hook_t)(zipc_test_recovery_phase_t phase,
+                                          zipc_component_id_t component,
+                                          void *context);
+void zipc_test_recovery_set_hook(zipc_test_recovery_hook_t hook,
+                                 void *context);
+void zipc_test_recovery_checkpoint(zipc_test_recovery_phase_t phase,
+                                   zipc_component_id_t component);
+#endif
 
 #ifdef __cplusplus
 }

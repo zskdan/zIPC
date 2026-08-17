@@ -107,11 +107,14 @@ int main(void)
     CHECK(zipc_pool_format(&bad) == ZIPC_ERR_UNSUPPORTED_MEMORY);
     zipc_platform_memory_close(atomic32_only);
 
-    atomic_store_explicit(&pool.header->components[3U].epoch, UINT32_MAX,
+    const uint64_t exhausted_lifecycle =
+        ((uint64_t)UINT32_MAX << 32) | ZIPC_COMPONENT_INACTIVE;
+    atomic_store_explicit(&pool.header->components[3U].lifecycle,
+                          exhausted_lifecycle,
                           memory_order_release);
     CHECK(zipc_component_register(&pool, 3U, NULL) == ZIPC_ERR_COMPONENT_STALE);
-    CHECK(atomic_load_explicit(&pool.header->components[3U].epoch,
-                               memory_order_acquire) == UINT32_MAX);
+    CHECK(atomic_load_explicit(&pool.header->components[3U].lifecycle,
+                               memory_order_acquire) == exhausted_lifecycle);
 
     uint32_t epoch = 0U;
     CHECK(zipc_component_register(&pool, 1U, &epoch) == ZIPC_OK);
@@ -198,6 +201,6 @@ int main(void)
     zipc_link_destroy(tx);
     free(ring);
     zipc_platform_memory_close(memory);
-    puts("PASS: ABI-2 geometry, capabilities, epochs, recovery and errors");
+    puts("PASS: ABI-3 geometry, capabilities, epochs, recovery and errors");
     return 0;
 }

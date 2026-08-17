@@ -340,11 +340,13 @@ int main(int argc, char **argv)
     }
 
     zipc_pool_t pool;
+    const size_t payload_offset =
+        (zipc_pool_required_control_size(SLOT_COUNT) + 63U) & ~(size_t)63U;
     const zipc_pool_config_t pool_cfg = {
         .control_memory = memory,
         .payload_memory = NULL,
         .control_offset = 0U,
-        .payload_offset = 16U * 1024U,
+        .payload_offset = payload_offset,
         .slot_count = SLOT_COUNT,
         .slot_capacity = SLOT_SIZE,
         .slot_stride = SLOT_SIZE,

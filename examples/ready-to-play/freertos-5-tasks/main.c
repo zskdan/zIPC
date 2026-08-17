@@ -68,10 +68,12 @@ void zipc_ready_freertos_start(void)
     };
     check(zipc_platform_memory_open(&g_memory, &memory_cfg));
 
+    const size_t payload_offset =
+        (zipc_pool_required_control_size(16U) + 63U) & ~(size_t)63U;
     const zipc_pool_config_t pool_cfg = {
         .control_memory = g_memory,
         .payload_memory = NULL,
-        .payload_offset = 16U * 1024U,
+        .payload_offset = payload_offset,
         .slot_count = 16U,
         .slot_capacity = 2048U,
         .payload_alignment = 64U,

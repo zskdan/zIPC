@@ -483,6 +483,42 @@ zipc_status_t zipc_platform_transport_receive(
     }
 }
 
+zipc_status_t zipc_platform_transport_receive_begin(
+    zipc_platform_transport_t *transport, zipc_message_t *message,
+    zipc_transport_receive_token_t *token)
+{
+    if (token == NULL)
+        return ZIPC_ERR_INVALID_ARGUMENT;
+    memset(token, 0, sizeof(*token));
+    token->transport_cookie = (uintptr_t)transport;
+    const zipc_status_t status =
+        zipc_platform_transport_receive(transport, message);
+    if (status == ZIPC_OK)
+        token->pending = true;
+    return status;
+}
+
+zipc_status_t zipc_platform_transport_receive_commit(
+    zipc_platform_transport_t *transport,
+    zipc_transport_receive_token_t *token)
+{
+    (void)transport;
+    if (token == NULL || !token->pending ||
+        token->transport_cookie != (uintptr_t)transport)
+        return ZIPC_ERR_INVALID_ARGUMENT;
+    token->pending = false;
+    return ZIPC_OK;
+}
+
+void zipc_platform_transport_receive_abort(
+    zipc_platform_transport_t *transport,
+    zipc_transport_receive_token_t *token)
+{
+    if (transport != NULL && token != NULL &&
+        token->transport_cookie == (uintptr_t)transport)
+        token->pending = false;
+}
+
 void zipc_platform_transport_close(zipc_platform_transport_t *transport)
 {
     if (transport == NULL)

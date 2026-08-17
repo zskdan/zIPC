@@ -289,10 +289,10 @@ int main(void)
     CHECK_OK(zipc_pool_format(&pool_config));
     zipc_pool_t pool;
     CHECK_OK(zipc_pool_attach(&pool, &pool_config));
-    CHECK(pool.header->abi_version == 2U);
-    pool.header->abi_version = 1U;
-    CHECK(zipc_pool_attach(&pool, &pool_config) == ZIPC_ERR_INVALID_POOL);
+    CHECK(pool.header->abi_version == 3U);
     pool.header->abi_version = 2U;
+    CHECK(zipc_pool_attach(&pool, &pool_config) == ZIPC_ERR_INVALID_POOL);
+    pool.header->abi_version = 3U;
 
     zipc_transport_spsc_ring_t *ring = calloc(
         1U, zipc_transport_spsc_ring_size(depth));
@@ -637,6 +637,6 @@ int main(void)
     zipc_platform_memory_close(payload);
     zipc_platform_memory_close(control);
     free(payload_storage); free(control_storage);
-    puts("PASS: ABI-2 publication, identity gate, rollover, lineage, visited set and trace");
+    puts("PASS: ABI-3 publication, identity gate, rollover, lineage, visited set and trace");
     return 0;
 }

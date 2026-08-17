@@ -72,8 +72,34 @@ int main(void)
           ZIPC_OK);
     CHECK(zipc_pool_buffer_release(&pool, zipc_buffer_handle(&wrong_owner), 3U) ==
           ZIPC_OK);
+    uint32_t newer_registered_epoch = 0U;
+    CHECK(zipc_component_register(&pool, 1U, &newer_registered_epoch) == ZIPC_OK);
+    CHECK(newer_registered_epoch == epoch + 1U);
     CHECK(zipc_pool_buffer_release(&pool, zipc_buffer_handle(&newer_epoch), 1U) ==
           ZIPC_OK);
+
+    uint32_t restart_epoch = 0U;
+    CHECK(zipc_component_register(&pool, 4U, &restart_epoch) == ZIPC_OK);
+    zipc_buffer_t interrupted;
+    CHECK(zipc_buffer_allocate(&pool, 4U, 0U, &interrupted) == ZIPC_OK);
+    const zipc_buffer_id_t interrupted_id = zipc_buffer_id(&interrupted);
+    const zipc_handle_t interrupted_handle = zipc_buffer_handle(&interrupted);
+    zipc_restart_t restart;
+    CHECK(zipc_component_restart_begin(&pool, 4U, restart_epoch, &restart) ==
+          ZIPC_OK);
+    CHECK(!zipc_buffer_is_valid(&interrupted));
+    CHECK(zipc_buffer_set_region(&interrupted, 0U, 1U) ==
+          ZIPC_ERR_INVALID_BUFFER);
+    zipc_buffer_t adopted;
+    CHECK(zipc_component_restart_next(&restart, &adopted) == ZIPC_OK);
+    CHECK(zipc_buffer_id(&adopted) == interrupted_id);
+    CHECK(zipc_buffer_handle(&adopted) != interrupted_handle);
+    CHECK(zipc_component_restart_next(&restart, &interrupted) ==
+          ZIPC_ERR_NO_BUFFER);
+    CHECK(zipc_component_restart_finish(&restart) == ZIPC_OK);
+    CHECK(zipc_component_unregister(&pool, 4U, restart_epoch) ==
+          ZIPC_ERR_COMPONENT_STALE);
+    CHECK(zipc_buffer_release(&adopted) == ZIPC_OK);
 
     zipc_descriptor_backend_type_t descriptor;
     zipc_event_backend_type_t event;

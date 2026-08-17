@@ -12,4 +12,13 @@ zipc_status_t zipc_linux_common_ring_pop(
     zipc_transport_spsc_ring_t *ring,
     zipc_message_t *message);
 
+zipc_status_t zipc_linux_common_ring_peek(
+    zipc_transport_spsc_ring_t *ring,
+    zipc_message_t *message,
+    uint32_t *position);
+
+zipc_status_t zipc_linux_common_ring_commit(
+    zipc_transport_spsc_ring_t *ring,
+    uint32_t position);
+
 #endif

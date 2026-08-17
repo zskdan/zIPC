@@ -33,6 +33,16 @@ static const char *event_name(uint16_t event)
     }
 }
 
+static const char *component_state_name(zipc_component_state_t state)
+{
+    switch (state) {
+    case ZIPC_COMPONENT_INACTIVE: return "INACTIVE";
+    case ZIPC_COMPONENT_RECOVERING: return "RECOVERING";
+    case ZIPC_COMPONENT_ACTIVE: return "ACTIVE";
+    default: return "UNKNOWN";
+    }
+}
+
 static uint32_t parse_u32(const char *s)
 {
     if (s[0] == '-' || isspace((unsigned char)s[0])) {
@@ -150,8 +160,9 @@ int main(int argc, char **argv)
         zipc_component_snapshot_t snapshot;
         (void)zipc_component_snapshot(&pool, (zipc_component_id_t)i, &snapshot);
         if (snapshot.epoch == 0U && !snapshot.active && snapshot.recovered_slots == 0U) continue;
-        printf("  id=%u epoch=%u active=%u heartbeat_ns=%" PRIu64 " recovered=%" PRIu64 "\n",
-               i, snapshot.epoch, snapshot.active ? 1U : 0U,
+        printf("  id=%u epoch=%u state=%s active=%u heartbeat_ns=%" PRIu64 " recovered=%" PRIu64 "\n",
+               i, snapshot.epoch, component_state_name(snapshot.state),
+               snapshot.active ? 1U : 0U,
                snapshot.last_heartbeat_ns, snapshot.recovered_slots);
     }
 
