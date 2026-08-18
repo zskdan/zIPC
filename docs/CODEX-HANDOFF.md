@@ -244,6 +244,11 @@ deferred.
 - `tests/recovery-chain-linux.c` runs A->B->C->D->E, randomly kills one of three
   relays at seeded checkpoints, defaults to 10 iterations for each eventfd and
   polling backend, and reports protocol/service min/mean/p50/p95/max recovery.
+  Normal output names each scenario, `--verbose` adds a timestamped stage and
+  latency breakdown, and `--quiet` limits successful runs to aggregate output.
+  Protocol failures quiesce surviving children before dumping their collected
+  timeline, component lifecycles, ring occupancy, active slots, and replay
+  command.
 - Release validation is Linux-host only; no target hardware was validated.
 
 ## v0.2.0 identity scope

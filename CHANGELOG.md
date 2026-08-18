@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Made `zipc-recovery-chain-linux` traces self-explanatory with named nodes and
+  crash checkpoints, normal/verbose/quiet output, timestamped recovery stages,
+  labeled latency breakdowns, symbolic errors, and automatic failure-state
+  dumps with replay commands.
+
 ## v0.3.0
 
 - Incremented the shared pool ABI to 3 and made component lifecycle one atomic

@@ -134,7 +134,7 @@ test: all
 	./build/tests/zipc-version-linux
 	./build/tests/zipc-api-simplified-linux
 	./build/tests/zipc-identity-linux
-	./build/tests/zipc-recovery-chain-linux --iterations 10 --seed 20260817
+	./build/tests/zipc-recovery-chain-linux --iterations 10 --seed 20260817 --quiet
 	./build/tests/zipc-topology-config-linux
 	./build/tests/zipc-strict-ownership-linux
 	./build/examples/zipc-shared-buffer-chain

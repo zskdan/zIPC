@@ -234,6 +234,18 @@ integration regression exercises split memory, FIFO, Unix sockets,
 ring/eventfd, PL ring/IRQ simulation, SMC/FF-A simulation, loops, prepend, and
 append.
 
+Run the five-process restart test directly for a self-explanatory scenario
+report or a timestamped recovery timeline:
+
+```bash
+./build/tests/zipc-recovery-chain-linux --iterations 10 --seed 20260817
+./build/tests/zipc-recovery-chain-linux --iterations 1 --seed 20260817 --verbose
+```
+
+`--quiet` prints only the aggregate pass and latency summary. Recovery protocol
+failures after fixture setup include the events collected so far, component
+epochs, ring occupancy, active slots, and an exact replay command.
+
 ## Universal chain
 
 `examples/universal/` documents this requested topology:
