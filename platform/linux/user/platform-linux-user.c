@@ -1,4 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
+#define _GNU_SOURCE
+
 #include <zipc/zipc.h>
 #include "../common/platform-linux-common.h"
 
