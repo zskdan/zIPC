@@ -120,7 +120,7 @@ membench: build/utilities/zipc-membench
 transport-bench: build/utilities/zipc-packetrate
 stat: build/utilities/zipc-stat
 
-docs:
+docs: build
 	@command -v doxygen >/dev/null 2>&1 || { echo "doxygen not installed"; exit 2; }
 	doxygen Doxyfile
 
