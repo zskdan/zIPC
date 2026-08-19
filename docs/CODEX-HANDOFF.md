@@ -2,8 +2,9 @@
 
 ## Objective
 
-Continue development from the v0.3.0 supervisorless relay restart recovery
-milestone.
+Continue from the v0.3.0 supervisorless relay restart recovery milestone toward
+v0.4.0 core observability/debuggability and the first delivered Linux userspace
+product at v1.0.0.
 
 ## Current release
 
@@ -12,6 +13,10 @@ milestone.
 - Status: experimental prototype; public API and shared-memory ABI are not stable.
 - Scope: online recovery of a terminated relay runtime on Linux SHM ring
   eventfd/polling links, building on v0.2 buffer identity and lineage.
+- Active checklist: `TODO.md`.
+- Canonical delivery plan: `docs/ROADMAP.md`.
+- Production status: not delivered or deployed; all v0.x work prepares Linux
+  userspace readiness.
 
 Recommended first task: read the authoritative repository documents, run the
 complete test suite, and report code/documentation mismatches before extending
@@ -186,7 +191,7 @@ Post-v0.2.0 work should define, but not fully enforce, a common link QoS model:
 - latency target and deadline;
 - drop policy.
 
-Transport-specific validation/enforcement begins in v0.4 and expands later.
+Transport-specific validation/enforcement begins in v2.0 and expands later.
 
 ### Async and callbacks
 
@@ -200,7 +205,7 @@ Post-v0.2.0 work defines the API contract and ownership semantics:
 - delivery/publication state;
 - callback execution context.
 
-v0.4 implements the request engine, deferred completion dispatch, native
+v2.1 implements the request engine, deferred completion dispatch, native
 timeouts, cancellation, and Linux poll/epoll integration.
 
 Key ownership rule: after successful async send submission, the application
@@ -209,7 +214,8 @@ blindly return ownership without recovery/acknowledgement semantics.
 
 ### Peer readiness and liveness
 
-v0.6 makes lifecycle first-class:
+The v2.x execution/QoS work makes lifecycle and compatibility negotiation
+first-class:
 
 - link state: down, starting, ready, degraded, failed;
 - peer state: unknown, booting, ready, alive, stopping, dead, restarted;
@@ -223,9 +229,9 @@ transport setup, memory-layout agreement, cache policy, and QoS compatibility.
 
 ### Doxygen
 
-`Doxyfile` and `make docs` exist. New v0.3.0 public APIs are documented; a
-complete audit of unrelated pre-existing APIs and generated example pages is
-deferred.
+`Doxyfile` and `make docs` exist. New v0.3.0 public APIs are documented; v0.8.0
+completes the remaining public API audit and makes missing documentation fail
+CI.
 
 ## v0.3.0 recovery scope
 
@@ -269,8 +275,9 @@ deferred.
 - No target hardware validation was performed for v0.2.0; target adapter runs
   use Linux-host stubs/simulation only.
 
-QoS, async, CRC, flow/request IDs, link identity, readiness, and advanced
-buffer models are deferred to v0.2.1+ or later roadmap milestones.
+QoS, async, CRC/integrity, flow/request IDs, public link identity, readiness,
+and advanced buffer models remain scheduled in the maintained roadmap rather
+than an open-ended v0.2.1+ bucket.
 
 ## Release discipline
 
@@ -278,12 +285,12 @@ For each version:
 
 - update `VERSION`;
 - update `CHANGELOG.md`;
-- update `README.md` and roadmap status;
+- update `README.md`, `TODO.md`, and roadmap status;
 - update `MANIFEST.txt`;
 - add tests for each public behavior;
 - run `make clean && make test && make utilities`;
 - document whether hardware tests were executed;
-- avoid direct commits to `main`;
+- avoid direct commits to `master`;
 - produce a reviewable pull request.
 
 

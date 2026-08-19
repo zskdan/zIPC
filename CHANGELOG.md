@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Rebased the maintained product roadmap around v0.x Linux userspace
+  preparation and a delivered v1.0.0 Linux profile, followed by FreeRTOS/RPMsg,
+  v2 QoS, v3 hardening/security, v4 UDP/TCP/TLS networking, and v5 kernel/DMA;
+  added `TODO.md` as the live milestone checklist without dropping postponed
+  features.
 - Made `zipc-recovery-chain-linux` traces self-explanatory with named nodes and
   crash checkpoints, normal/verbose/quiet output, timestamped recovery stages,
   labeled latency breakdowns, symbolic errors, and automatic failure-state

@@ -9,6 +9,11 @@ processing passes and an exact 256-bit visited set records distinct components.
 **Status:** experimental v0.3 prototype. The public API and shared-memory ABI
 are not stable before v1.0, and this release is not production-ready.
 
+The active milestone is v0.4.0 observability and debuggability. All remaining
+v0.x releases prepare the first delivered Linux userspace product at v1.0.0.
+See the live [`TODO.md`](TODO.md) and canonical
+[`docs/ROADMAP.md`](docs/ROADMAP.md).
+
 
 
 ## Application API (v0.3.0)
@@ -70,12 +75,14 @@ the quiesced administrative recovery path.
 - Component epochs, heartbeats, unregister/restart detection, and explicit orphan-slot recovery.
 - Per-buffer hop limits and absolute deadlines to bound chains with loops.
 - Timeout-oriented `zipc_send_timeout()` and `zipc_receive_timeout()` entry
-  points retain compatibility signatures in ABI 2. Their per-call argument
+  points retain compatibility signatures in ABI 3. Their per-call argument
   does not override the timeout fixed when the backend was opened and is not a
   portable duration contract.
 - Fixed-depth per-slot trace history for allocation, send, receive, release, and recovery.
 - `zipc-stat` for pool counters, component lifecycle state, active slots, ages, and trace entries.
-- A release roadmap from v0.1 through v1.0 in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+- A maintained delivery roadmap from the v0.x Linux preparation milestones
+  through QoS, security, networking, kernel, DMA, and hardware production in
+  [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Core model
 

@@ -67,7 +67,7 @@ attributes. PL BRAM is payload-only unless atomic support is proven.
 
 ## D010 — Cache maintenance is explicit platform behavior
 
-Memory barriers do not perform cache maintenance. Future v0.5 APIs will expose
+Memory barriers do not perform cache maintenance. Future v5.1 APIs will expose
 sync-for-CPU/device operations. Until then, integrations must provide correct
 mapping or cache operations externally.
 
@@ -99,7 +99,7 @@ correlation ID, slot handle, generation, transfer sequence, or link ID.
 
 QoS configuration belongs to the logical link and may include class, priority,
 queue depth, maximum inflight operations, latency target, deadline, and drop
-policy. This model is deferred beyond v0.2.0; v0.4 begins enforcement.
+policy. This model is deferred beyond v0.2.0; v2.0 begins enforcement.
 
 ## D015 — Preserve synchronous and asynchronous APIs
 
@@ -124,8 +124,10 @@ Future lifecycle support must distinguish:
 
 ## D018 — Doxygen becomes mandatory in v0.2
 
-v0.2 adds complete public API and example documentation, a `Doxyfile`, and
-`make docs`. Every new public API from that point must include Doxygen comments.
+v0.2 adds a `Doxyfile`, `make docs`, documentation for its new public APIs and
+examples, and the requirement that every subsequent public API include Doxygen
+comments. It does not claim a complete audit of unrelated pre-v0.2 declarations;
+that audit and warning enforcement are scheduled for v0.8.
 
 ## D019 — Host stubs are not hardware validation
 
@@ -243,3 +245,20 @@ supplied shared-ring mappings. Transfer metadata persists the stable link ID so
 reconciliation cannot move a descriptor to another same-peer link. A second
 crash during `RECOVERING` is deferred; it requires quiesced administrative
 recovery in this release.
+
+## D026 — Delivery generations and maintained scope
+
+zIPC is not yet delivered or deployed as a supported product. All remaining
+v0.x milestones prepare a narrow Linux userspace profile; v1.0.0 is the first
+stable delivery for Linux applications. Later v1.x releases add FreeRTOS and
+Linux-A53-to-FreeRTOS-R5 RPMsg without breaking the Linux v1 contract.
+
+The following major generations group product capabilities: v2 QoS and the
+async execution model, v3 broad hardening and security, v4 UDP/TCP/TLS network
+operation, and v5 Linux kernel, DMA, and hardware production. A major change
+requires migration documentation, while compatible minor releases preserve the
+major's existing supported contracts.
+
+`docs/ROADMAP.md` is the canonical strategy and postponed-feature registry;
+`TODO.md` is the maintained active-milestone checklist. Features may move to a
+different milestone with a recorded reason, but are not silently deleted.

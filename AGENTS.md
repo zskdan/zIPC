@@ -10,6 +10,8 @@ These instructions apply to the complete repository unless a more specific
 - The public API and shared-memory ABI are not stable before v1.0.
 - v0.3.0 adds pool ABI 3 supervisorless relay restart recovery for the Linux
   SHM ring eventfd and polling transports. It is validated on Linux hosts only.
+- The active milestone is v0.4.0 observability/debuggability; `TODO.md` is the
+  maintained checklist and `docs/ROADMAP.md` is the canonical delivery plan.
 
 Read these files before changing code:
 
@@ -17,8 +19,9 @@ Read these files before changing code:
 2. `docs/ARCHITECTURE.md`
 3. `docs/DECISIONS.md`
 4. `docs/ROADMAP.md`
-5. `README.md`
-6. `CHANGELOG.md`
+5. `TODO.md`
+6. `README.md`
+7. `CHANGELOG.md`
 
 Treat them as the authoritative continuation of the previous design work.
 When code and documentation disagree, report the mismatch before silently
@@ -26,11 +29,14 @@ changing the design.
 
 ## Required workflow
 
-- Work on a feature branch; do not commit directly to `main`.
+- Work on a feature branch; do not commit directly to `master`.
 - Prefer small, reviewable commits with descriptive messages.
 - Preserve backward compatibility within a patch release.
+- Update `TODO.md` whenever active work starts, completes, becomes blocked,
+  moves, or discovers a release blocker. Update `docs/ROADMAP.md` whenever
+  priority, release scope, or a postponed feature destination changes.
 - Update `VERSION`, `CHANGELOG.md`, `README.md`, affected documentation, tests,
-  and `MANIFEST.txt` when a release changes them.
+  `TODO.md`, `docs/ROADMAP.md`, and `MANIFEST.txt` when a release changes them.
 - Add Doxygen comments for every new public API starting with v0.2.
 - Do not claim hardware validation when only host stubs or simulations were run.
 - Do not silently weaken atomics, ownership rules, cache requirements, or error handling.
@@ -115,6 +121,7 @@ For changes touching public structures or shared-memory layout, also inspect:
 Every PR should state:
 
 - scope and roadmap milestone;
+- `TODO.md` and roadmap status impact;
 - API or ABI impact;
 - ownership/concurrency impact;
 - platform impact;
