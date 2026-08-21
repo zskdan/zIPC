@@ -1,11 +1,12 @@
 PROJECT_NAME           = "zIPC"
 PROJECT_NUMBER         = 0.3.0
-OUTPUT_DIRECTORY       = build/docs
+OUTPUT_DIRECTORY       = build/docs/doxygen
 INPUT                  = include/zipc/zipc.h include/zipc/zipc-kernel.h docs
 RECURSIVE              = YES
 FILE_PATTERNS           = *.h *.md
 USE_MDFILE_AS_MAINPAGE = docs/API.md
 GENERATE_HTML          = YES
+GENERATE_XML           = YES
 GENERATE_LATEX         = NO
 EXTRACT_ALL            = YES
 JAVADOC_AUTOBRIEF      = YES

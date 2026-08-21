@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added a Sphinx and Breathe documentation site that combines the existing
+  Markdown guides with Doxygen-generated C API XML, and updated the GitHub
+  Actions workflow to publish the site to GitHub Pages.
 - Rebased the maintained product roadmap around v0.x Linux userspace
   preparation and a delivered v1.0.0 Linux profile, followed by FreeRTOS/RPMsg,
   v2 QoS, v3 hardening/security, v4 UDP/TCP/TLS networking, and v5 kernel/DMA;

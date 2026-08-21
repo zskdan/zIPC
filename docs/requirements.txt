@@ -1,0 +1,3 @@
+Sphinx>=8.2,<9
+breathe>=4.36,<5
+myst-parser>=4,<5

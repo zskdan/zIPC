@@ -186,7 +186,9 @@ not part of the recommended application interface:
 
 New application code should use the smaller API above.
 
-See [`examples/buffer-api/`](../examples/buffer-api/) for a runnable walkthrough
+See the
+[`examples/buffer-api/`](https://github.com/zskdan/zIPC/tree/master/examples/buffer-api)
+directory for a runnable walkthrough
 of allocation with headroom, append, prepend, absolute offset access, trimming,
 bounds validation, and ownership invalidation.
 

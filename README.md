@@ -347,9 +347,36 @@ cc app.c -Iinclude -Lbuild/libs -lzipc -pthread -lrt
 ```
 
 Linux build outputs are grouped under `build/`: `build/libs/`,
-`build/examples/`, `build/tests/`, `build/utilities/`, and `build/docs/`
-(Doxygen). `make all` builds every binary and the library; `make docs` builds
-the Doxygen output separately when Doxygen is installed.
+`build/examples/`, `build/tests/`, `build/utilities/`, and `build/docs/`.
+`make all` builds every binary and the library.
+
+### Build the documentation locally
+
+The published documentation uses Doxygen to extract the C/C++ API as XML,
+Breathe to expose that API to Sphinx, and MyST to include the existing Markdown
+guides. Install Doxygen and Graphviz with your system package manager, then set
+up the Python dependencies and build the site:
+
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r docs/requirements.txt
+make docs
+```
+
+Open `build/docs/html/index.html` to view the same Sphinx site that is deployed
+to GitHub Pages. `make doxygen` builds the preserved standalone Doxygen HTML at
+`build/docs/doxygen/html/index.html` and the XML consumed by Breathe at
+`build/docs/doxygen/xml/`.
+
+### GitHub Pages deployment
+
+The `Deploy zIPC Documentation` workflow builds and deploys the Sphinx site on
+every push to `master`, and it can also be started manually. In the repository
+settings, select **GitHub Actions** as the Pages source. The workflow uploads
+`build/docs/html` and deploys it with GitHub's official Pages actions; no
+generated HTML needs to be committed. Once Pages is enabled, the site is
+available at `https://zskdan.github.io/zIPC/`.
 
 ## v0.1.1 target-oriented integration tests
 

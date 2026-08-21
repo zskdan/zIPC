@@ -1,5 +1,6 @@
 CC ?= cc
 AR ?= ar
+SPHINXBUILD ?= sphinx-build
 CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Werror
 CPPFLAGS += -Iinclude -Iplatform/linux/common
 LDLIBS += -pthread -lrt
@@ -39,7 +40,7 @@ DEPS := $(ZIPC_OBJS:%=%.d) $(EXAMPLE_BINS:%=%.d) $(TEST_BINS:%=%.d) \
 .PHONY: all clean test libs basic integration integration-targets integration-freertos \
         integration-baremetal guard-pages version-linux api-simplified topology-config \
 		strict-ownership ready-linux5 ready-to-play utilities ping membench \
-		transport-bench stat list-platforms docs shared-buffer-chain buffer-api
+		transport-bench stat list-platforms doxygen docs shared-buffer-chain buffer-api
 
 all: $(ZIPC_LIB) $(EXAMPLE_BINS) $(TEST_BINS) $(UTILITY_BINS)
 
@@ -47,7 +48,7 @@ libs: $(ZIPC_LIB)
 
 build:
 	mkdir -p $@
-build/examples build/tests build/utilities build/libs build/libs/obj: build
+build/examples build/tests build/utilities build/libs build/libs/obj build/docs: build
 	mkdir -p $@
 
 build/libs/obj/%.o: src/core/%.c | build/libs/obj
@@ -120,9 +121,16 @@ membench: build/utilities/zipc-membench
 transport-bench: build/utilities/zipc-packetrate
 stat: build/utilities/zipc-stat
 
-docs: build
+doxygen: build/docs
 	@command -v doxygen >/dev/null 2>&1 || { echo "doxygen not installed"; exit 2; }
 	doxygen Doxyfile
+
+docs: doxygen
+	@command -v $(SPHINXBUILD) >/dev/null 2>&1 || { \
+		echo "sphinx-build not installed; run: python3 -m pip install -r docs/requirements.txt"; \
+		exit 2; \
+	}
+	$(SPHINXBUILD) $(SPHINXOPTS) -b html docs build/docs/html
 
 test: all
 	./build/examples/zipc-basic

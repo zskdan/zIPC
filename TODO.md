@@ -83,6 +83,8 @@ and security fixes do not wait for their planned milestone.
 
 ## Recently completed
 
+- [x] Added Sphinx/Breathe documentation builds and GitHub Pages deployment
+  while retaining standalone Doxygen HTML generation.
 - [x] v0.2.0 buffer identity and parent lineage.
 - [x] v0.3.0 supervisorless Linux SHM ring relay restart recovery.
 - [x] Named recovery scenarios, normal/verbose/quiet output, timestamped stage

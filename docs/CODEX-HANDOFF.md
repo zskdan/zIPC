@@ -229,9 +229,11 @@ transport setup, memory-layout agreement, cache policy, and QoS compatibility.
 
 ### Doxygen
 
-`Doxyfile` and `make docs` exist. New v0.3.0 public APIs are documented; v0.8.0
-completes the remaining public API audit and makes missing documentation fail
-CI.
+`Doxyfile` and `make doxygen` preserve standalone Doxygen HTML and generate XML.
+`make docs` renders the existing Markdown guides and the Doxygen API through
+Sphinx/Breathe, and the documentation workflow publishes that site to GitHub
+Pages. New v0.3.0 public APIs are documented; v0.8.0 completes the remaining
+public API audit and makes missing documentation fail CI.
 
 ## v0.3.0 recovery scope
 
