@@ -300,7 +300,9 @@ See `examples/universal/README.md` for the proposed transport at each hop.
   ```
 
 - `examples/shared-buffer-chain/` demonstrates zero-copy relay ownership and
-  parent/child buffer lineage across A -> B -> C -> D.
+  parent/child buffer lineage across A -> B -> C -> D. The
+  [`three-component walkthrough`](docs/THREE-COMPONENT-EXAMPLE.md) explains its
+  simpler A -> B -> C relay path step by step.
 
 ## Ready-to-play examples
 

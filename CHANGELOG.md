@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added a beginner-oriented A -> B -> C walkthrough explaining link endpoints,
+  buffer ownership, zero-copy relay behavior, invalidation after send, and the
+  first observable steps of the shared-buffer-chain example.
 - Added a Sphinx and Breathe documentation site that combines the existing
   Markdown guides with Doxygen-generated C API XML, and updated the GitHub
   Actions workflow to publish the site to GitHub Pages.

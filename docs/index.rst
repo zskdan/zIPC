@@ -18,6 +18,7 @@ Getting started
    :maxdepth: 2
 
    API
+   THREE-COMPONENT-EXAMPLE
    NNG-MIGRATION
    TOPOLOGY
 

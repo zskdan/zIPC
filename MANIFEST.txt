@@ -25,6 +25,7 @@ docs/PACKETRATE-BENCHMARK.md
 docs/index.rst
 docs/requirements.txt
 docs/ROADMAP.md
+docs/THREE-COMPONENT-EXAMPLE.md
 docs/TOPOLOGY.md
 docs/platform-matrix.md
 examples/basic/basic.c

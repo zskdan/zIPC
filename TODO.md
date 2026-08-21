@@ -83,6 +83,8 @@ and security fixes do not wait for their planned milestone.
 
 ## Recently completed
 
+- [x] Added a beginner-oriented three-component ownership walkthrough for the
+  existing shared-buffer-chain example.
 - [x] Added Sphinx/Breathe documentation builds and GitHub Pages deployment
   while retaining standalone Doxygen HTML generation.
 - [x] v0.2.0 buffer identity and parent lineage.
